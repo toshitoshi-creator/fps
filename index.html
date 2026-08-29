@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#05080c">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="description" content="STEEL PROTOCOL - スマートフォン向け本格FPS">
+<title>STEEL PROTOCOL</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%2305080c'/%3E%3Cpath d='M16 5v6M16 21v6M5 16h6M21 16h6' stroke='%2339e0ff' stroke-width='2.5'/%3E%3Ccircle cx='16' cy='16' r='2' fill='%23ff3b46'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="app">
+
+  <!-- ==================== 3D VIEW ==================== -->
+  <canvas id="view"></canvas>
+  <div id="dmgVignette" class="vignette"></div>
+  <div id="lowhpVignette" class="vignette lowhp"></div>
+  <div id="flash" class="flash"></div>
+
+  <!-- ==================== HUD ==================== -->
+  <div id="hud" class="screen hidden">
+    <!-- top bar -->
+    <div class="hud-top">
+      <div class="hud-left-top">
+        <div class="hp-block">
+          <div class="hp-row">
+            <span class="hp-label">HP</span>
+            <span id="hpText" class="hp-text">100</span>
+          </div>
+          <div class="hp-bar"><div id="hpFill" class="hp-fill"></div><div id="hpLag" class="hp-lag"></div></div>
+        </div>
+      </div>
+      <div class="hud-center-top">
+        <div id="stageTag" class="stage-tag">STAGE 1</div>
+        <div id="objText" class="obj-text">敵を全滅させろ</div>
+        <div id="objProgress" class="obj-progress">0 / 3</div>
+      </div>
+      <div class="hud-right-top">
+        <div id="timerText" class="timer">00:00</div>
+        <button id="btnPause" class="icon-btn" aria-label="pause">❚❚</button>
+      </div>
+    </div>
+
+    <!-- crosshair -->
+    <div id="crosshair" class="crosshair">
+      <div class="ch ch-t"></div><div class="ch ch-b"></div><div class="ch ch-l"></div><div class="ch ch-r"></div>
+      <div class="ch-dot"></div>
+    </div>
+    <div id="hitmark" class="hitmark"><span>✕</span></div>
+
+    <!-- damage direction indicators -->
+    <div id="dirIndicators"></div>
+
+    <!-- off-screen enemy compass -->
+    <div id="compass" class="compass hidden"><div class="cmp-arrow"></div><span id="cmpDist">0m</span></div>
+
+    <!-- kill / event feed -->
+    <div id="feed" class="feed"></div>
+    <div id="bigMsg" class="big-msg"></div>
+    <div id="tutorial" class="tutorial hidden"></div>
+
+    <!-- ammo -->
+    <div class="hud-ammo">
+      <div id="wpnName" class="wpn-name">ASSAULT RIFLE</div>
+      <div class="ammo-row">
+        <span id="magText" class="mag">30</span><span class="slash">/</span><span id="resText" class="res">120</span>
+      </div>
+      <div id="reloadBar" class="reload-bar hidden"><div id="reloadFill"></div><span>RELOADING</span></div>
+    </div>
+
+    <!-- kills + coins -->
+    <div class="hud-stats">
+      <div class="stat"><span class="stat-ico">☠</span><span id="killText">0</span></div>
+      <div class="stat"><span class="stat-ico coin">◆</span><span id="coinText">0</span></div>
+    </div>
+
+    <!-- weapon slots -->
+    <div id="wpnSlots" class="wpn-slots"></div>
+
+    <!-- ==================== TOUCH CONTROLS ==================== -->
+    <div id="moveZone" class="zone move-zone">
+      <div id="stickBase" class="stick-base hidden"><div id="stickKnob" class="stick-knob"></div></div>
+    </div>
+    <div id="lookZone" class="zone look-zone"></div>
+
+    <button id="btnFire"   class="act-btn fire"   data-act="fire">FIRE</button>
+    <button id="btnReload" class="act-btn reload" data-act="reload"><span class="ico">⟳</span><span class="lbl">RELOAD</span></button>
+    <button id="btnSwitch" class="act-btn switch" data-act="switch"><span class="ico">⇄</span><span class="lbl">WEAPON</span></button>
+    <button id="btnSprint" class="act-btn sprint" data-act="sprint"><span class="ico">»</span><span class="lbl">DASH</span></button>
+    <button id="btnCrouch" class="act-btn crouch" data-act="crouch"><span class="ico">▼</span><span class="lbl">CROUCH</span></button>
+  </div>
+
+  <!-- ==================== TITLE ==================== -->
+  <div id="titleScreen" class="screen menu">
+    <div class="scanlines"></div>
+    <div class="menu-inner">
+      <div class="logo">
+        <div class="logo-sub">TACTICAL FPS</div>
+        <h1>STEEL<span>PROTOCOL</span></h1>
+        <div class="logo-line"></div>
+      </div>
+      <div class="menu-btns">
+        <button class="mbtn primary" data-nav="start">START</button>
+        <button class="mbtn" data-nav="weapon">WEAPON</button>
+        <button class="mbtn" data-nav="stage">STAGE</button>
+        <button class="mbtn" data-nav="settings">SETTINGS</button>
+      </div>
+      <div class="title-foot">
+        <span id="titleProgress">STAGE 1 / 5 · COIN 0</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== STAGE SELECT ==================== -->
+  <div id="stageScreen" class="screen menu hidden">
+    <div class="scanlines"></div>
+    <div class="menu-inner wide">
+      <div class="panel-head"><button class="back-btn" data-nav="title">‹ BACK</button><h2>STAGE SELECT</h2><div class="coin-badge">◆ <span class="coinNum">0</span></div></div>
+      <div id="stageList" class="stage-list"></div>
+    </div>
+  </div>
+
+  <!-- ==================== WEAPON / UPGRADE ==================== -->
+  <div id="weaponScreen" class="screen menu hidden">
+    <div class="scanlines"></div>
+    <div class="menu-inner wide">
+      <div class="panel-head"><button class="back-btn" data-nav="title">‹ BACK</button><h2>ARMORY</h2><div class="coin-badge">◆ <span class="coinNum">0</span></div></div>
+      <div class="armory">
+        <div id="wpnTabs" class="wpn-tabs"></div>
+        <div class="armory-body">
+          <div class="wpn-detail">
+            <canvas id="wpnPreview" width="260" height="120"></canvas>
+            <div id="wpnTitle" class="wpn-title">ASSAULT RIFLE</div>
+            <div id="wpnDesc" class="wpn-desc"></div>
+            <div id="wpnStats" class="wpn-stats"></div>
+            <button id="wpnAction" class="mbtn small hidden"></button>
+          </div>
+          <div class="upg-col">
+            <div class="upg-head">WEAPON UPGRADE</div>
+            <div id="wpnUpgrades" class="upg-list"></div>
+            <div class="upg-head">SOLDIER UPGRADE</div>
+            <div id="plrUpgrades" class="upg-list"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== SETTINGS ==================== -->
+  <div id="settingsScreen" class="screen menu hidden">
+    <div class="scanlines"></div>
+    <div class="menu-inner">
+      <div class="panel-head"><button class="back-btn" data-nav="title">‹ BACK</button><h2>SETTINGS</h2><div></div></div>
+      <div class="settings-list">
+        <div class="set-row"><label>感度 (LOOK)</label><input id="setSens" type="range" min="40" max="260" step="5"><span id="setSensVal">120</span></div>
+        <div class="set-row"><label>効果音</label><button id="setSfx" class="toggle" data-on="1">ON</button></div>
+        <div class="set-row"><label>BGM</label><button id="setBgm" class="toggle" data-on="1">ON</button></div>
+        <div class="set-row"><label>画面揺れ</label><button id="setShake" class="toggle" data-on="1">ON</button></div>
+        <div class="set-row"><label>左右反転 (左利き)</label><button id="setLefty" class="toggle" data-on="0">OFF</button></div>
+        <div class="set-row"><label>描画品質</label><button id="setQuality" class="toggle wide-toggle">AUTO</button></div>
+        <div class="set-row"><label>オートエイム補正</label><button id="setAim" class="toggle" data-on="1">ON</button></div>
+        <div class="set-row danger"><label>セーブデータ削除</label><button id="setWipe" class="toggle danger-btn">DELETE</button></div>
+      </div>
+      <div class="hint">※ タップで切替。設定は自動保存されます。</div>
+    </div>
+  </div>
+
+  <!-- ==================== PAUSE ==================== -->
+  <div id="pauseScreen" class="screen overlay hidden">
+    <div class="dialog">
+      <h2>PAUSED</h2>
+      <div class="dlg-btns">
+        <button class="mbtn primary" data-nav="resume">RESUME</button>
+        <button class="mbtn" data-nav="restart">RESTART</button>
+        <button class="mbtn" data-nav="tostage">STAGE SELECT</button>
+        <button class="mbtn" data-nav="title">TITLE</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== GAME OVER ==================== -->
+  <div id="overScreen" class="screen overlay hidden">
+    <div class="dialog over">
+      <h2 class="over-title">MISSION FAILED</h2>
+      <div id="overStats" class="result-stats"></div>
+      <div class="dlg-btns">
+        <button class="mbtn primary" data-nav="retry">RETRY</button>
+        <button class="mbtn" data-nav="tostage">STAGE SELECT</button>
+        <button class="mbtn" data-nav="title">TITLE</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== CLEAR ==================== -->
+  <div id="clearScreen" class="screen overlay hidden">
+    <div class="dialog clear">
+      <div id="rankBadge" class="rank-badge">S</div>
+      <h2 class="clear-title">STAGE CLEAR</h2>
+      <div id="clearStats" class="result-stats"></div>
+      <div id="rewardLine" class="reward-line"></div>
+      <div class="dlg-btns">
+        <button id="btnNextStage" class="mbtn primary" data-nav="next">NEXT STAGE ›</button>
+        <button class="mbtn" data-nav="armory">WEAPON UPGRADE</button>
+        <button class="mbtn" data-nav="tostage">STAGE SELECT</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== BRIEFING ==================== -->
+  <div id="briefScreen" class="screen overlay hidden">
+    <div class="dialog brief">
+      <div id="briefStage" class="brief-stage">STAGE 1</div>
+      <h2 id="briefName">TRAINING GROUND</h2>
+      <div id="briefObj" class="brief-obj"></div>
+      <div id="briefEnemies" class="brief-enemies"></div>
+      <button class="mbtn primary big" data-nav="deploy">DEPLOY</button>
+    </div>
+  </div>
+
+  <!-- ==================== ROTATE ==================== -->
+  <div id="rotate" class="rotate hidden">
+    <svg class="rot-ico" viewBox="0 0 64 64" width="86" height="86" aria-hidden="true">
+      <rect x="20" y="6" width="24" height="52" rx="4" fill="none" stroke="currentColor" stroke-width="3"/>
+      <rect x="28" y="50" width="8" height="2.5" rx="1.2" fill="currentColor"/>
+      <path d="M8 44a24 24 0 0 1 8-18" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+      <path d="M13 25l4-1 1 5z" fill="currentColor"/>
+    </svg>
+    <p>横画面にしてください</p>
+    <small>PLEASE ROTATE YOUR DEVICE</small>
+  </div>
+
+  <div id="loading" class="loading">LOADING…</div>
+</div>
+
+<script src="js/util.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/data.js"></script>
+<script src="js/save.js"></script>
+<script src="js/input.js"></script>
+<script src="js/sprites.js"></script>
+<script src="js/render.js"></script>
+<script src="js/game.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
