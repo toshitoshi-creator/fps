@@ -100,7 +100,7 @@
     showBrief(stageId) {
       const st = DATA.STAGES.find(s => s.id === stageId) || DATA.STAGES[0];
       this._pendingStage = st.id;
-      U.$id('briefStage').textContent = 'STAGE ' + st.id;
+      U.$id('briefStage').textContent = st.custom ? 'CUSTOM MAP' : 'STAGE ' + st.id;
       U.$id('briefName').textContent = st.name + ' / ' + st.jp;
       U.$id('briefObj').innerHTML = '<b style="color:var(--accent)">目標: ' +
         this.objectiveLabel(st) + '</b><br>' + st.brief;
@@ -123,9 +123,9 @@
         const rank = d.ranks[st.id];
         const bt = d.bestTime[st.id];
         const b = document.createElement('button');
-        b.className = 'stage-card' + (unlocked ? '' : ' locked') + (st.boss ? ' boss' : '');
+        b.className = 'stage-card' + (unlocked ? '' : ' locked') + (st.boss ? ' boss' : '') + (st.custom ? ' custom' : '');
         b.innerHTML =
-          '<div class="sc-no">STAGE ' + st.id + '</div>' +
+          '<div class="sc-no">' + (st.custom ? 'CUSTOM' : 'STAGE ' + st.id) + '</div>' +
           '<div class="sc-name">' + st.name + '</div>' +
           '<div class="sc-meta">' + st.jp + (st.boss ? ' · BOSS' : '') + '<br>' +
           (unlocked ? (bt ? 'BEST ' + U.fmtTime(bt) : 'NO RECORD') : '前のステージをクリアしてください') + '</div>' +
@@ -338,8 +338,8 @@
       this.lowVig.classList.add('hidden');
       this.dirEl.innerHTML = '';
       this.setCompass(null);
-      this.stageTag.textContent = 'STAGE ' + game.stage.id + ' · ' + game.stage.name;
-      this.bigMsg('STAGE ' + game.stage.id);
+      this.stageTag.textContent = (game.stage.custom ? 'CUSTOM' : 'STAGE ' + game.stage.id) + ' · ' + game.stage.name;
+      this.bigMsg(game.stage.custom ? game.stage.name : 'STAGE ' + game.stage.id);
     },
 
     setHP(hp, max) {
@@ -474,7 +474,7 @@
 
     showOver(r) {
       U.$id('overStats').innerHTML =
-        row('到達ステージ', 'STAGE ' + r.stage.id) +
+        row('到達ステージ', r.stage.custom ? r.stage.name : 'STAGE ' + r.stage.id) +
         row('撃破数', r.kills + ' 体') +
         row('残存敵', r.remaining + ' 体') +
         row('生存時間', U.fmtTime(r.time));

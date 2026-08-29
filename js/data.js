@@ -248,6 +248,53 @@
     }
   ];
 
+  const CUSTOM_KEY = 'steel_protocol_custom_stage';
+  const CUSTOM_ID = 99;
+
+  /**
+   * tools/scan2map.html が localStorage に書き込んだスキャンマップを取り込む。
+   * 壊れたデータでゲームが起動しなくなることが無いよう、形が合わないものは黙って捨てる。
+   */
+  function loadCustomStage() {
+    let raw = null;
+    try { raw = localStorage.getItem(CUSTOM_KEY); } catch (e) { return null; }
+    if (!raw) return null;
+    let s;
+    try { s = JSON.parse(raw); } catch (e) { return null; }
+    if (!s || !Array.isArray(s.map) || s.map.length < 5) return null;
+    const w = s.map[0] && s.map[0].length;
+    if (!w || w < 5 || w > 64 || s.map.length > 64) return null;
+    if (!s.map.every(r => typeof r === 'string' && r.length === w)) return null;
+    const joined = s.map.join('');
+    if (joined.indexOf('P') < 0) return null;                 // 開始地点が無い
+    if (!/[grshB]/.test(joined)) return null;                 // 敵がいない
+    return Object.assign({
+      id: CUSTOM_ID, custom: true,
+      name: 'SCANNED SITE', jp: 'スキャンマップ',
+      objective: 'eliminate', par: 120, reward: 220,
+      hpMul: 1.0, dmgMul: 1.0, aiMul: 1.05,
+      theme: { ceil: '#1e2630', ceil2: '#131a22', floor: '#38424e', floor2: '#232a33', fog: '#2a333e', walls: ['#6f8091', '#59697a', '#7d8f6a', '#8a6a52'] },
+      brief: '実地スキャンから生成された地形。敵を全滅させろ。',
+      dir: 0
+    }, s, { id: CUSTOM_ID, custom: true });
+  }
+
+  function installCustomStage() {
+    const i = STAGES.findIndex(s => s.custom);
+    if (i >= 0) STAGES.splice(i, 1);
+    const c = loadCustomStage();
+    if (c) STAGES.push(c);
+    return c;
+  }
+
+  function clearCustomStage() {
+    try { localStorage.removeItem(CUSTOM_KEY); } catch (e) { }
+    const i = STAGES.findIndex(s => s.custom);
+    if (i >= 0) STAGES.splice(i, 1);
+  }
+
+  const builtinStages = () => STAGES.filter(s => !s.custom);
+
   const ENEMY_CHARS = { g: 'grunt', r: 'rusher', s: 'shooter', h: 'heavy', B: 'boss' };
   const WALL_CHARS = { '#': 1, '=': 2, '%': 3, '*': 4 };
 
@@ -288,6 +335,7 @@
   g.DATA = {
     WEAPONS, WEAPON_BY_ID, ENEMIES, STAGES,
     WEAPON_UPGRADES, PLAYER_UPGRADES,
-    parseMap, computeRank, ENEMY_CHARS, WALL_CHARS
+    parseMap, computeRank, ENEMY_CHARS, WALL_CHARS,
+    CUSTOM_KEY, CUSTOM_ID, loadCustomStage, installCustomStage, clearCustomStage, builtinStages
   };
 })(window);

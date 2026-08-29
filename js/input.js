@@ -8,7 +8,7 @@
     fire: false,
     sprint: false,
     crouch: false,
-    sensitivity: 120,
+    sensitivity: 200,
     lefty: false,
     onReload: null, onSwitch: null, onSelectWeapon: null,
     _stickId: null, _lookId: null,

@@ -63,6 +63,7 @@
 
   function boot() {
     Save.load();
+    DATA.installCustomStage();      // tools/scan2map.html で作ったマップがあれば取り込む
     Render.init(U.$id('view'));
     Input.init();
     UI.init();

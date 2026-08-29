@@ -90,6 +90,35 @@ function report() {
   await page.click('#settingsScreen .back-btn'); await page.waitForTimeout(120);
   ok('タイトルへ戻れる', await page.isVisible('#titleScreen'));
 
+  /* ================= 2b. 視点感度 ================= */
+  section('2b. 視点感度のデフォルト');
+  const sens = await G(() => ({ save: __game.Save.data.settings.sens, input: __game.Input.sensitivity }));
+  ok('デフォルト感度が200', sens.save === 200 && sens.input === 200, 'sens=' + sens.save);
+  const sensSwing = await page.evaluate(() => {
+    // 画面いっぱい(ルックゾーン幅)を1回スワイプしたときの旋回角
+    const px = window.innerWidth * 0.54;
+    return px * 0.0022 * (__game.Input.sensitivity / 100) * 180 / Math.PI;
+  });
+  ok('1スワイプで100度以上振り向ける', sensSwing > 100, Math.round(sensSwing) + '° / swipe');
+  const migrated = await page.evaluate(() => {
+    // 旧デフォルト(120)のまま保存された古いセーブを再現して読み直す
+    const raw = JSON.parse(localStorage.getItem('steel_protocol_save_v1') || '{}');
+    raw.settings.sens = 120; delete raw.setRev; raw.coins = 777;
+    localStorage.setItem('steel_protocol_save_v1', JSON.stringify(raw));
+    __game.Save.load();
+    const a = { sens: __game.Save.data.settings.sens, coins: __game.Save.data.coins };
+    // 自分で低感度に設定した人の値は上書きしない
+    const raw2 = JSON.parse(localStorage.getItem('steel_protocol_save_v1'));
+    raw2.settings.sens = 80; delete raw2.setRev;
+    localStorage.setItem('steel_protocol_save_v1', JSON.stringify(raw2));
+    __game.Save.load();
+    return { migrated: a, kept: __game.Save.data.settings.sens };
+  });
+  ok('旧セーブの感度が新デフォルトへ移行される', migrated.migrated.sens === 200, 'sens=' + migrated.migrated.sens);
+  ok('移行しても進行データは失われない', migrated.migrated.coins === 777);
+  ok('自分で変えた感度は上書きされない', migrated.kept === 80, 'sens=' + migrated.kept);
+  await page.evaluate(() => { __game.Save.wipe(); __game.UI.applySettings(); });
+
   /* ================= 3. ゲーム開始 ================= */
   section('3. ゲーム開始 → 実プレイ');
   await page.click('[data-nav="start"]'); await page.waitForTimeout(150);

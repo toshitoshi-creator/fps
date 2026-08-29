@@ -2,6 +2,7 @@
 (function (g) {
   'use strict';
   const KEY = 'steel_protocol_save_v1';
+  const DEFAULT_SENS = 200;      // 画面幅いっぱいの1スワイプでおよそ115度振り向ける
 
   function defaultSave() {
     const wu = {};
@@ -16,7 +17,8 @@
       equipped: 'ar',
       wUpg: wu,                    // per-weapon upgrade levels
       pUpg: { hp: 0, spd: 0, amo: 0, arm: 0, crt: 0 },
-      settings: { sens: 120, sfx: 1, bgm: 1, shake: 1, lefty: 0, quality: 'AUTO', aim: 1 },
+      settings: { sens: DEFAULT_SENS, sfx: 1, bgm: 1, shake: 1, lefty: 0, quality: 'AUTO', aim: 1 },
+      setRev: 1,
       totalKills: 0, totalPlays: 0, seenTutorial: 0
     };
   }
@@ -32,6 +34,7 @@
       } catch (e) { d = null; }
       const def = defaultSave();
       if (!d || typeof d !== 'object' || d.v !== def.v) d = def;
+      const hadSetRev = !!d.setRev;      // 判定は必ずマージ前の生データで行う
       // deep-merge so new fields survive older saves
       this.data = Object.assign({}, def, d);
       this.data.settings = Object.assign({}, def.settings, d.settings || {});
@@ -44,6 +47,12 @@
       if (!Array.isArray(this.data.unlocked) || !this.data.unlocked.length) this.data.unlocked = ['ar'];
       if (this.data.unlocked.indexOf('ar') < 0) this.data.unlocked.push('ar');
       if (this.data.unlocked.indexOf(this.data.equipped) < 0) this.data.equipped = 'ar';
+      // 旧デフォルト(120)のまま遊んでいた人だけ新デフォルトへ寄せる。自分で変えた値は尊重する
+      if (!hadSetRev) {
+        if (this.data.settings.sens === 120) this.data.settings.sens = DEFAULT_SENS;
+        this.data.setRev = 1;
+      }
+      this.data.settings.sens = U.clamp(this.data.settings.sens | 0, 60, 400) || DEFAULT_SENS;
       this.data.coins = Math.max(0, this.data.coins | 0);
       return this.data;
     },
@@ -61,13 +70,17 @@
     },
 
     /* --- queries --- */
-    maxStage() {                       // highest playable stage number
+    maxStage() {                       // highest playable built-in stage number
+      const n = DATA.builtinStages().length;
       const c = this.data.cleared;
       let m = 1;
-      for (let i = 1; i <= DATA.STAGES.length; i++) if (c.indexOf(i) >= 0) m = Math.max(m, i + 1);
-      return Math.min(m, DATA.STAGES.length);
+      for (let i = 1; i <= n; i++) if (c.indexOf(i) >= 0) m = Math.max(m, i + 1);
+      return Math.min(m, n);
     },
-    isStageUnlocked(id) { return id === 1 || this.data.cleared.indexOf(id - 1) >= 0; },
+    isStageUnlocked(id) {
+      if (id === DATA.CUSTOM_ID) return true;      // 自作/スキャンマップは常に開放
+      return id === 1 || this.data.cleared.indexOf(id - 1) >= 0;
+    },
     owns(wid) { return this.data.unlocked.indexOf(wid) >= 0; },
     ownedWeapons() { return DATA.WEAPONS.filter(w => this.owns(w.id)); },
 
@@ -99,7 +112,8 @@
       this.data.pUpg[key] = lv + 1; this.save(); return 'ok';
     },
     clearStage(id, rank, timeSec, coins) {
-      if (this.data.cleared.indexOf(id) < 0) this.data.cleared.push(id);
+      // スキャンマップのクリアは本編の進行度には数えない（コインと記録は入る）
+      if (id !== DATA.CUSTOM_ID && this.data.cleared.indexOf(id) < 0) this.data.cleared.push(id);
       const order = { D: 0, C: 1, B: 2, A: 3, S: 4 };
       const prev = this.data.ranks[id];
       if (!prev || order[rank] > order[prev]) this.data.ranks[id] = rank;

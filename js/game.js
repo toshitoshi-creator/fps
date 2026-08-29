@@ -26,6 +26,8 @@
       const stage = DATA.STAGES.find(s => s.id === stageId) || DATA.STAGES[0];
       this.stage = stage;
       this.stageIdx = DATA.STAGES.indexOf(stage);
+      // 難易度スケールは本編の並び順に基づく。カスタムは中盤相当として扱う
+      this.diffIdx = stage.custom ? 2 : this.stageIdx;
       const m = DATA.parseMap(stage);
       this.map = m;
       Render.setStage(stage.theme);
@@ -463,7 +465,7 @@
       e.state = 'dead';
       e.deadT = 0;
       this.kills++;
-      const gain = Math.round(e.def.coins * (1 + this.stageIdx * 0.12) * (crit ? 1.25 : 1));
+      const gain = Math.round(e.def.coins * (1 + this.diffIdx * 0.12) * (crit ? 1.25 : 1));
       this.coins += gain;
       this.spawnBlood(e.x, e.y, 0.6, e.def.boss ? 60 : 18, e.def.palette.trim);
       this.spawnGibs(e.x, e.y, e.def.boss ? 40 : 12);
@@ -554,7 +556,7 @@
     updateEnemies(dt) {
       const p = this.player;
       // how many regular enemies are allowed to be shooting at the same moment
-      this._attackLimit = 2 + Math.floor(this.stageIdx * 0.5);
+      this._attackLimit = 2 + Math.floor(this.diffIdx * 0.5);
       let engaged = 0;
       for (let i = 0; i < this.enemies.length; i++) {
         const e = this.enemies[i];
@@ -1057,7 +1059,7 @@
       UI.showClear({
         stage: this.stage, rank, time: this.time, kills: this.kills,
         acc, coins: this.coins, bonus, total, newWeapon,
-        hasNext: !!DATA.STAGES[this.stageIdx + 1]
+        hasNext: !this.stage.custom && !!DATA.STAGES[this.stageIdx + 1] && !DATA.STAGES[this.stageIdx + 1].custom
       });
     },
 

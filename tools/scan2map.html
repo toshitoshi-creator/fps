@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>SCAN → MAP · STEEL PROTOCOL</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%2305080c'/%3E%3Cpath d='M6 22h20M6 22l5-12h10l5 12' stroke='%2339e0ff' stroke-width='2.4' fill='none'/%3E%3C/svg%3E">
+<style>
+:root{--accent:#39e0ff;--ok:#4dff9a;--warn:#ffb020;--danger:#ff3b46;--bg:#070b10;--panel:#0d151d;--line:rgba(57,224,255,.28);--txt:#dff2fb;}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--txt);
+  font-family:"Bahnschrift","Hiragino Sans","Noto Sans JP",system-ui,sans-serif;}
+a{color:var(--accent)}
+#wrap{display:grid;grid-template-columns:320px 1fr;height:100%;}
+@media (max-width:820px){#wrap{grid-template-columns:1fr;grid-template-rows:auto 1fr;height:auto;min-height:100%;}}
+#side{background:var(--panel);border-right:1px solid var(--line);overflow-y:auto;padding:14px;}
+#main{position:relative;display:flex;flex-direction:column;min-height:0;}
+h1{font-size:15px;letter-spacing:.22em;margin:0 0 2px;color:#fff}
+.sub{font-size:11px;opacity:.6;margin-bottom:14px;line-height:1.5}
+h2{font-size:10px;letter-spacing:.28em;color:var(--accent);margin:16px 0 7px;padding-bottom:4px;border-bottom:1px solid rgba(57,224,255,.18)}
+#drop{border:2px dashed var(--line);border-radius:6px;padding:18px 12px;text-align:center;font-size:12px;cursor:pointer;
+  background:rgba(57,224,255,.04);transition:.15s;line-height:1.6}
+#drop.hot{background:rgba(57,224,255,.16);border-color:var(--accent)}
+#drop b{color:var(--accent)}
+.row{display:flex;align-items:center;gap:8px;margin:7px 0;font-size:12px}
+.row label{flex:0 0 96px;opacity:.8}
+.row input[type=range]{flex:1;accent-color:var(--accent);min-width:0}
+.row output,.row .val{flex:0 0 48px;text-align:right;font-weight:700;font-size:11px}
+select,button,input[type=number]{font-family:inherit;color:var(--txt);background:#101a24;border:1px solid var(--line);
+  border-radius:4px;padding:5px 8px;font-size:12px}
+button{cursor:pointer}
+button:hover{background:rgba(57,224,255,.14)}
+button.primary{background:rgba(57,224,255,.2);border-color:var(--accent);color:#fff;font-weight:700}
+button.ok{border-color:var(--ok);color:var(--ok)}
+button.danger{border-color:var(--danger);color:#ff9a9a}
+button:disabled{opacity:.4;cursor:not-allowed}
+.btns{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.btns button{flex:1 1 auto}
+#tools{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
+.tool{padding:6px 8px;font-size:11px;border:1px solid var(--line);border-radius:4px;background:#101a24;cursor:pointer}
+.tool.on{background:rgba(57,224,255,.25);border-color:var(--accent);color:#fff}
+#stat{font-size:11px;line-height:1.7;margin-top:8px;background:#0a1219;border:1px solid rgba(57,224,255,.16);padding:8px;border-radius:4px}
+#stat .k{opacity:.6}
+#issues{font-size:11px;line-height:1.6;margin-top:6px}
+#issues .bad{color:var(--danger)} #issues .good{color:var(--ok)}
+#cv{flex:1;min-height:340px;background:#05080c;display:block;width:100%;touch-action:none;cursor:crosshair}
+#legend{position:absolute;right:10px;top:10px;font-size:10px;background:rgba(5,10,16,.86);border:1px solid var(--line);
+  padding:7px 9px;border-radius:4px;line-height:1.7;pointer-events:none}
+.sw{display:inline-block;width:9px;height:9px;margin-right:5px;vertical-align:-1px;border:1px solid rgba(255,255,255,.2)}
+#out{width:100%;height:150px;background:#05090d;color:#9fe7ff;border:1px solid var(--line);border-radius:4px;
+  font-family:ui-monospace,Menlo,Consolas,monospace;font-size:10px;padding:8px;white-space:pre;overflow:auto;resize:vertical;margin-top:8px}
+.note{font-size:10.5px;opacity:.6;line-height:1.6;margin-top:6px}
+.busy{position:absolute;inset:0;background:rgba(5,8,12,.8);display:flex;align-items:center;justify-content:center;
+  font-size:13px;letter-spacing:.2em;color:var(--accent);z-index:5}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="side">
+    <h1>SCAN → MAP</h1>
+    <div class="sub">LiDARスキャン（点群 / メッシュ）を STEEL PROTOCOL のマップに変換します。<br>
+      iPhone/iPad Pro の Polycam・Scaniverse・3d Scanner App から <b>OBJ / PLY / STL</b> で書き出したファイルを読み込んでください。</div>
+
+    <div id="drop">
+      <b>ファイルをドロップ</b><br>または タップして選択<br>
+      <span style="opacity:.55;font-size:11px">.obj .ply .stl .xyz / 間取り図 .png .jpg</span>
+      <input id="file" type="file" accept=".obj,.ply,.stl,.xyz,.pts,.asc,.txt,.csv,image/*" hidden>
+    </div>
+    <div class="btns"><button id="demo">サンプルで試す</button></div>
+
+    <h2>変換</h2>
+    <div class="row"><label>上方向</label>
+      <select id="up" style="flex:1"><option value="">自動</option><option value="0">X</option><option value="1">Y</option><option value="2">Z</option></select>
+    </div>
+    <div class="row"><label>セルの大きさ</label><input id="cell" type="range" min="75" max="250" step="5"><span class="val" id="cellV">1.00m</span></div>
+    <div class="row"><label>床の判定</label><input id="frac" type="range" min="5" max="80" step="1"><span class="val" id="fracV">0.34</span></div>
+    <div class="row"><label>床バンド上</label><input id="fhi" type="range" min="10" max="80" step="2"><span class="val" id="fhiV">0.35m</span></div>
+    <div class="row"><label>ノイズ除去</label><input id="desp" type="range" min="0" max="3" step="1"><span class="val" id="despV">1</span></div>
+    <div class="row"><label>穴埋め</label><input id="fill" type="range" min="0" max="3" step="1"><span class="val" id="fillV">1</span></div>
+    <div class="btns">
+      <button id="rotL">⟲ 回転</button><button id="rotR">⟳ 回転</button>
+      <button id="flipX">左右反転</button><button id="flipY">上下反転</button>
+    </div>
+
+    <h2>配置</h2>
+    <div class="row"><label>敵の数</label><input id="ecount" type="range" min="1" max="14" step="1"><span class="val" id="ecountV">6</span></div>
+    <div class="btns"><button id="auto">自動配置しなおす</button></div>
+    <div id="tools">
+      <span class="tool on" data-t="wall">壁</span><span class="tool" data-t="floor">床</span>
+      <span class="tool" data-t="P">開始</span>
+      <span class="tool" data-t="g">一般兵</span><span class="tool" data-t="r">突撃兵</span>
+      <span class="tool" data-t="s">遠距離</span><span class="tool" data-t="h">重装</span><span class="tool" data-t="B">ボス</span>
+      <span class="tool" data-t="erase">消す</span>
+    </div>
+    <div class="note">キャンバスをドラッグして直接描けます。壁の見た目は <b>%</b>（コンテナ）に変えると遮蔽物らしくなります。</div>
+    <div class="btns"><button id="paintPct">選択中の壁を % に</button></div>
+
+    <h2>結果</h2>
+    <div id="stat">まだ読み込まれていません</div>
+    <div id="issues"></div>
+
+    <h2>書き出し</h2>
+    <div class="btns">
+      <button id="play" class="primary">この端末で遊ぶ</button>
+      <button id="copy" class="ok">定義をコピー</button>
+      <button id="dl">.txt 保存</button>
+      <button id="rm" class="danger">登録を削除</button>
+    </div>
+    <textarea id="out" readonly spellcheck="false"></textarea>
+    <div class="note">「この端末で遊ぶ」を押すと、同じブラウザのゲーム側 STAGE 一覧に <b>CUSTOM</b> として追加されます（本編の進行度には影響しません）。</div>
+  </div>
+
+  <div id="main">
+    <canvas id="cv"></canvas>
+    <div id="legend">
+      <div><span class="sw" style="background:#465b70"></span>壁</div>
+      <div><span class="sw" style="background:#6d5a30"></span>遮蔽物 (%)</div>
+      <div><span class="sw" style="background:#1a3c30"></span>床</div>
+      <div><span class="sw" style="background:#39e0ff"></span>開始地点</div>
+      <div><span class="sw" style="background:#54a06d"></span>敵</div>
+      <div style="opacity:.55;margin-top:3px">床の緑が濃いほど<br>スキャンで床がよく取れている</div>
+    </div>
+    <div id="busy" class="busy" style="display:none">処理中…</div>
+  </div>
+</div>
+
+<script src="scan2map.js"></script>
+<script>
+(function () {
+  'use strict';
+  const S = window.Scan2Map;
+  const $ = id => document.getElementById(id);
+  const cv = $('cv'), ctx = cv.getContext('2d');
+
+  const state = {
+    cloud: null, grid: null, spawn: null, enemies: [], chars: null,
+    tool: 'wall', imageMode: false, imgData: null, rotate: 0, flipX: false, flipY: false,
+    fileName: ''
+  };
+
+  /* ---------- controls ---------- */
+  const ctl = {
+    up: $('up'), cell: $('cell'), frac: $('frac'), fhi: $('fhi'),
+    desp: $('desp'), fill: $('fill'), ecount: $('ecount')
+  };
+  ctl.cell.value = 100; ctl.frac.value = 34; ctl.fhi.value = 35;
+  ctl.desp.value = 1; ctl.fill.value = 1; ctl.ecount.value = 6;
+
+  function syncLabels() {
+    $('cellV').textContent = (ctl.cell.value / 100).toFixed(2) + 'm';
+    $('fracV').textContent = (ctl.frac.value / 100).toFixed(2);
+    $('fhiV').textContent = (ctl.fhi.value / 100).toFixed(2) + 'm';
+    $('despV').textContent = ctl.desp.value;
+    $('fillV').textContent = ctl.fill.value;
+    $('ecountV').textContent = ctl.ecount.value;
+  }
+  Object.values(ctl).forEach(el => el.addEventListener('input', () => { syncLabels(); rebuild(); }));
+  syncLabels();
+
+  $('rotL').onclick = () => { state.rotate = (state.rotate + 270) % 360; rebuild(); };
+  $('rotR').onclick = () => { state.rotate = (state.rotate + 90) % 360; rebuild(); };
+  $('flipX').onclick = () => { state.flipX = !state.flipX; rebuild(); };
+  $('flipY').onclick = () => { state.flipY = !state.flipY; rebuild(); };
+  $('auto').onclick = () => { autoPlace(); draw(); emit(); };
+
+  document.querySelectorAll('.tool').forEach(t => t.addEventListener('click', () => {
+    document.querySelectorAll('.tool').forEach(o => o.classList.remove('on'));
+    t.classList.add('on');
+    state.tool = t.dataset.t;
+  }));
+
+  /* ---------- file input ---------- */
+  const drop = $('drop'), fileInput = $('file');
+  drop.onclick = () => fileInput.click();
+  fileInput.onchange = e => { if (e.target.files[0]) readFile(e.target.files[0]); };
+  ['dragenter', 'dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('hot'); }));
+  ['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('hot'); }));
+  drop.addEventListener('drop', e => { if (e.dataTransfer.files[0]) readFile(e.dataTransfer.files[0]); });
+  window.addEventListener('dragover', e => e.preventDefault());
+  window.addEventListener('drop', e => {
+    e.preventDefault();
+    if (e.dataTransfer && e.dataTransfer.files[0]) readFile(e.dataTransfer.files[0]);
+  });
+
+  function busy(on, msg) { $('busy').style.display = on ? 'flex' : 'none'; if (msg) $('busy').textContent = msg; }
+
+  function readFile(f) {
+    state.fileName = f.name;
+    busy(true, '読み込み中…');
+    if (/^image\//.test(f.type)) {
+      const img = new Image();
+      img.onload = () => {
+        const c = document.createElement('canvas');
+        const sc = Math.min(1, 700 / Math.max(img.width, img.height));
+        c.width = Math.max(8, Math.round(img.width * sc));
+        c.height = Math.max(8, Math.round(img.height * sc));
+        const x = c.getContext('2d');
+        x.drawImage(img, 0, 0, c.width, c.height);
+        state.imageMode = true;
+        state.imgData = x.getImageData(0, 0, c.width, c.height);
+        state.cloud = null;
+        busy(false); rebuild();
+      };
+      img.onerror = () => { busy(false); alert('画像を読み込めませんでした'); };
+      img.src = URL.createObjectURL(f);
+      return;
+    }
+    const r = new FileReader();
+    r.onload = () => {
+      try {
+        state.cloud = S.parse(f.name, r.result);
+        if (!state.cloud.count) throw new Error('点が見つかりません');
+        if (state.cloud.faces && state.cloud.count < 40000) state.cloud = S.densify(state.cloud, 0.08);
+        state.imageMode = false;
+        // 密度からセルサイズを提案
+        const sug = S.suggestCell(state.cloud);
+        ctl.cell.value = Math.round(sug.cell * 100);
+        syncLabels();
+        busy(false); rebuild();
+      } catch (err) { busy(false); alert('読み込みに失敗しました: ' + err.message); }
+    };
+    r.onerror = () => { busy(false); alert('ファイルを読めませんでした'); };
+    const ext = f.name.toLowerCase().split('.').pop();
+    if (ext === 'obj' || ext === 'xyz' || ext === 'pts' || ext === 'asc' || ext === 'txt' || ext === 'csv') r.readAsText(f);
+    else r.readAsArrayBuffer(f);
+  }
+
+  /* ---------- demo cloud (LiDARスキャンの模擬) ---------- */
+  $('demo').onclick = () => {
+    busy(true, '生成中…');
+    setTimeout(() => {
+      const plan = [
+        '####################',
+        '#........#.........#',
+        '#........#.........#',
+        '#...##...#....##...#',
+        '#...##........##...#',
+        '#........#.........#',
+        '####..####.....#####',
+        '#..................#',
+        '#...##...#....##...#',
+        '#...##...#....##...#',
+        '#........#.........#',
+        '####################'
+      ];
+      const pts = [];
+      let seed = 7|0;
+      const rnd = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
+      const g2 = () => (rnd() + rnd() + rnd() - 1.5) * 2 * 0.02;
+      const solid = (x, y) => x < 0 || y < 0 || x >= plan[0].length || y >= plan.length || plan[y][x] === '#';
+      for (let y = 0; y < plan.length; y++) for (let x = 0; x < plan[0].length; x++) {
+        if (solid(x, y)) {
+          [[1, 0], [-1, 0], [0, 1], [0, -1]].forEach(d => {
+            if (solid(x + d[0], y + d[1])) return;
+            for (let t = 0; t <= 1; t += 0.05) for (let z = 0.02; z < 2.6; z += 0.05) {
+              if (rnd() < 0.12) continue;
+              const px = d[0] ? x + (d[0] > 0 ? 1 : 0) : x + t;
+              const py = d[1] ? y + (d[1] > 0 ? 1 : 0) : y + t;
+              pts.push(px + g2(), z + g2(), py + g2());
+            }
+          });
+        } else {
+          for (let a = 0; a < 1; a += 0.1) for (let b = 0; b < 1; b += 0.1) {
+            if (rnd() < 0.12) continue;
+            pts.push(x + a + g2(), g2(), y + b + g2());
+            pts.push(x + a + g2(), 2.6 + g2(), y + b + g2());
+          }
+        }
+      }
+      state.cloud = { xyz: Float32Array.from(pts), count: pts.length / 3, faces: null };
+      state.imageMode = false;
+      state.fileName = 'demo-scan.ply';
+      ctl.cell.value = 100; syncLabels();
+      busy(false); rebuild();
+    }, 30);
+  };
+
+  /* ---------- pipeline ---------- */
+  function rebuild() {
+    if (!state.cloud && !state.imageMode) return;
+    busy(true, '変換中…');
+    setTimeout(() => {
+      try {
+        let g;
+        if (state.imageMode) {
+          g = S.fromImageData(state.imgData, { cols: Math.round(2400 / +ctl.cell.value) });
+          if (state.rotate) g = S.rotate(g, state.rotate);
+          if (state.flipX) g = S.flip(g, 'x');
+          if (state.flipY) g = S.flip(g, 'y');
+        } else {
+          g = S.gridify(state.cloud, {
+            cell: +ctl.cell.value / 100,
+            up: ctl.up.value === '' ? null : +ctl.up.value,
+            floorFrac: +ctl.frac.value / 100,
+            floorHi: +ctl.fhi.value / 100,
+            rotate: state.rotate, flipX: state.flipX, flipY: state.flipY
+          });
+          if (g.error) throw new Error(g.error);
+        }
+        g = S.cleanup(g, { despeckle: +ctl.desp.value, fill: +ctl.fill.value, nooks: 1, crop: true });
+        state.grid = g;
+        state.chars = new Array(g.w * g.h).fill(null);
+        autoPlace();
+        draw(); emit();
+      } catch (e) {
+        alert('変換に失敗しました: ' + e.message);
+      }
+      busy(false);
+    }, 20);
+  }
+
+  function autoPlace() {
+    const g = state.grid;
+    if (!g) return;
+    state.spawn = S.pickSpawn(g);
+    const n = +ctl.ecount.value;
+    // 合計がちょうど n になるように内訳を決める
+    const grunt = Math.max(1, Math.round(n * 0.5));
+    const rusher = Math.min(n - grunt, Math.round(n * 0.2));
+    const shooter = Math.min(n - grunt - rusher, Math.round(n * 0.2));
+    const mix = { grunt, rusher, shooter, heavy: Math.max(0, n - grunt - rusher - shooter) };
+    state.enemies = state.spawn ? S.placeEnemies(g, state.spawn, mix, 1234) : [];
+  }
+
+  /* ---------- draw ---------- */
+  const CH2NAME = { g: '一般兵', r: '突撃兵', s: '遠距離兵', h: '重装兵', B: 'ボス' };
+  const ECOLOR = { g: '#54a06d', r: '#b8484a', s: '#4179ad', h: '#a2842c', B: '#a06bd0' };
+  const T2CH = { g: 'g', r: 'r', s: 's', h: 'h', B: 'B' };
+  const NAME2CH = { grunt: 'g', rusher: 'r', shooter: 's', heavy: 'h', boss: 'B' };
+
+  let view = { s: 1, ox: 0, oy: 0 };
+
+  function fit() {
+    const g = state.grid;
+    const r = cv.getBoundingClientRect();
+    cv.width = Math.max(200, Math.floor(r.width * devicePixelRatio));
+    cv.height = Math.max(200, Math.floor(r.height * devicePixelRatio));
+    if (!g) return;
+    const pad = 20 * devicePixelRatio;
+    view.s = Math.max(4, Math.min((cv.width - pad * 2) / g.w, (cv.height - pad * 2) / g.h));
+    view.ox = (cv.width - g.w * view.s) / 2;
+    view.oy = (cv.height - g.h * view.s) / 2;
+  }
+
+  function draw() {
+    fit();
+    const g = state.grid;
+    ctx.fillStyle = '#05080c';
+    ctx.fillRect(0, 0, cv.width, cv.height);
+    if (!g) {
+      ctx.fillStyle = 'rgba(223,242,251,.35)';
+      ctx.font = (13 * devicePixelRatio) + 'px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('スキャンファイルを読み込んでください', cv.width / 2, cv.height / 2);
+      return;
+    }
+    const s = view.s;
+    for (let y = 0; y < g.h; y++) for (let x = 0; x < g.w; x++) {
+      const i = y * g.w + x;
+      const px = view.ox + x * s, py = view.oy + y * s;
+      if (g.grid[i]) {
+        // 壁は常に明るいスレート。床より確実に明るくして構造が一目で分かるようにする
+        ctx.fillStyle = state.chars[i] === '%' ? '#6d5a30' : '#465b70';
+        ctx.fillRect(px, py, s + 0.6, s + 0.6);
+        ctx.fillStyle = 'rgba(255,255,255,.08)';
+        ctx.fillRect(px, py, s + 0.6, Math.max(1, s * 0.12));
+      } else {
+        // 床は暗い一定色。床の検出量は控えめな緑の重ねで示すだけにする
+        ctx.fillStyle = '#0d161d';
+        ctx.fillRect(px, py, s + 0.6, s + 0.6);
+        const c = g.cover ? Math.min(1, g.cover[i]) : 0.6;
+        ctx.fillStyle = 'rgba(60,200,140,' + (0.10 + c * 0.26).toFixed(3) + ')';
+        ctx.fillRect(px, py, s + 0.6, s + 0.6);
+      }
+    }
+    // grid lines
+    if (s > 9) {
+      ctx.strokeStyle = 'rgba(0,0,0,.28)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (let x = 0; x <= g.w; x++) { ctx.moveTo(view.ox + x * s, view.oy); ctx.lineTo(view.ox + x * s, view.oy + g.h * s); }
+      for (let y = 0; y <= g.h; y++) { ctx.moveTo(view.ox, view.oy + y * s); ctx.lineTo(view.ox + g.w * s, view.oy + y * s); }
+      ctx.stroke();
+    }
+    // spawn
+    if (state.spawn) {
+      ctx.fillStyle = '#39e0ff';
+      ctx.beginPath();
+      ctx.arc(view.ox + (state.spawn.x + .5) * s, view.oy + (state.spawn.y + .5) * s, s * .34, 0, 7);
+      ctx.fill();
+      ctx.fillStyle = '#05080c';
+      ctx.font = 'bold ' + (s * .42) + 'px sans-serif';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('P', view.ox + (state.spawn.x + .5) * s, view.oy + (state.spawn.y + .55) * s);
+    }
+    // enemies
+    state.enemies.forEach(e => {
+      const ch = NAME2CH[e.t] || e.t;
+      ctx.fillStyle = ECOLOR[ch] || '#54a06d';
+      ctx.beginPath();
+      ctx.arc(view.ox + (e.x + .5) * s, view.oy + (e.y + .5) * s, s * (ch === 'B' ? .42 : .3), 0, 7);
+      ctx.fill();
+      ctx.fillStyle = '#05080c';
+      ctx.font = 'bold ' + (s * .38) + 'px sans-serif';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(ch.toUpperCase(), view.ox + (e.x + .5) * s, view.oy + (e.y + .55) * s);
+    });
+  }
+  window.addEventListener('resize', () => { draw(); });
+
+  /* ---------- painting ---------- */
+  let painting = false;
+  function cellAt(ev) {
+    const r = cv.getBoundingClientRect();
+    const x = Math.floor(((ev.clientX - r.left) * devicePixelRatio - view.ox) / view.s);
+    const y = Math.floor(((ev.clientY - r.top) * devicePixelRatio - view.oy) / view.s);
+    const g = state.grid;
+    if (!g || x < 0 || y < 0 || x >= g.w || y >= g.h) return null;
+    return { x, y, i: y * g.w + x };
+  }
+  function apply(c) {
+    const g = state.grid;
+    if (!c || !g) return;
+    const border = c.x === 0 || c.y === 0 || c.x === g.w - 1 || c.y === g.h - 1;
+    const t = state.tool;
+    if (t === 'wall') { if (!border) { g.grid[c.i] = 1; removeAt(c); } else g.grid[c.i] = 1; }
+    else if (t === 'floor') { if (!border) g.grid[c.i] = 0; }
+    else if (t === 'erase') { removeAt(c); }
+    else if (t === 'P') { if (!g.grid[c.i]) { removeAt(c); state.spawn = { x: c.x, y: c.y }; } }
+    else if (T2CH[t]) {
+      if (!g.grid[c.i]) {
+        removeAt(c);
+        const NAME = { g: 'grunt', r: 'rusher', s: 'shooter', h: 'heavy', B: 'boss' };
+        state.enemies.push({ t: NAME[t], x: c.x, y: c.y });
+      }
+    }
+    draw(); emit();
+  }
+  function removeAt(c) {
+    state.enemies = state.enemies.filter(e => !(e.x === c.x && e.y === c.y));
+    if (state.spawn && state.spawn.x === c.x && state.spawn.y === c.y) state.spawn = null;
+  }
+  cv.addEventListener('pointerdown', e => { e.preventDefault(); painting = true; cv.setPointerCapture(e.pointerId); apply(cellAt(e)); });
+  cv.addEventListener('pointermove', e => { if (painting) apply(cellAt(e)); });
+  ['pointerup', 'pointercancel'].forEach(ev => cv.addEventListener(ev, () => { painting = false; }));
+
+  $('paintPct').onclick = () => {
+    const g = state.grid;
+    if (!g) return;
+    // 空間に面した「島」の壁だけコンテナ表現にする（外周は通常の壁のまま）
+    for (let y = 1; y < g.h - 1; y++) for (let x = 1; x < g.w - 1; x++) {
+      const i = y * g.w + x;
+      if (!g.grid[i]) continue;
+      let open = 0;
+      [[1, 0], [-1, 0], [0, 1], [0, -1]].forEach(d => { if (!g.grid[(y + d[1]) * g.w + (x + d[0])]) open++; });
+      state.chars[i] = open >= 3 ? '%' : state.chars[i];
+    }
+    draw(); emit();
+  };
+
+  /* ---------- output ---------- */
+  function rows() {
+    const g = state.grid;
+    if (!g) return null;
+    const chars = state.chars.map(c => c || null);
+    return S.toMapRows(g, state.spawn, state.enemies.map(e => ({ t: e.t, x: e.x, y: e.y })), chars);
+  }
+
+  let lastRows = null;
+  function emit() {
+    const g = state.grid;
+    if (!g) return;
+    const r = rows();
+    lastRows = r;
+    const v = S.validate(r);
+    const meters = (g.cell || 1);
+    $('stat').innerHTML =
+      '<span class="k">サイズ</span> ' + g.w + ' × ' + g.h + ' セル' +
+      (g.cell ? ' <span class="k">(1セル ' + meters.toFixed(2) + 'm → 実寸 約 ' + (g.w * meters).toFixed(1) + ' × ' + (g.h * meters).toFixed(1) + 'm)</span>' : '') + '<br>' +
+      '<span class="k">歩ける面積</span> ' + (g.freeCells || v.reachable) + ' セル　' +
+      '<span class="k">敵</span> ' + v.enemies + ' 体<br>' +
+      (state.cloud ? '<span class="k">点群</span> ' + state.cloud.count.toLocaleString() + ' 点　' +
+        '<span class="k">床の傾き</span> ' + (g.plane ? g.plane.tiltDeg.toFixed(1) + '°' : '-') : '<span class="k">入力</span> 画像');
+    $('issues').innerHTML = v.ok
+      ? '<span class="good">✓ そのまま遊べる形式です</span>'
+      : v.problems.slice(0, 5).map(p => '<span class="bad">✗ ' + p + '</span>').join('<br>');
+    $('out').value = S.toStageSource(r, { name: 'SCANNED SITE', jp: (state.fileName || 'scan').replace(/\.[^.]+$/, '') });
+    $('play').disabled = !v.ok;
+  }
+
+  $('copy').onclick = () => {
+    const t = $('out');
+    t.select();
+    navigator.clipboard ? navigator.clipboard.writeText(t.value).then(() => flash($('copy'), 'コピーしました')) : document.execCommand('copy');
+  };
+  $('dl').onclick = () => {
+    const blob = new Blob([$('out').value], { type: 'text/plain' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'scanned-stage.txt';
+    a.click();
+  };
+  $('play').onclick = () => {
+    if (!lastRows) return;
+    const payload = {
+      map: lastRows,
+      name: 'SCANNED SITE',
+      jp: (state.fileName || 'scan').replace(/\.[^.]+$/, '').slice(0, 24)
+    };
+    try {
+      localStorage.setItem('steel_protocol_custom_stage', JSON.stringify(payload));
+      flash($('play'), 'ゲームに登録しました');
+      setTimeout(() => { location.href = '../index.html'; }, 700);
+    } catch (e) { alert('保存できませんでした: ' + e.message); }
+  };
+  $('rm').onclick = () => {
+    try { localStorage.removeItem('steel_protocol_custom_stage'); flash($('rm'), '削除しました'); } catch (e) { }
+  };
+  function flash(btn, msg) {
+    const old = btn.textContent;
+    btn.textContent = msg;
+    setTimeout(() => btn.textContent = old, 1200);
+  }
+
+  draw();
+  window.__scan2map = { state, rebuild, emit, rows: () => lastRows };
+})();
+</script>
+</body>
+</html>
