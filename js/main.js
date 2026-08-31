@@ -97,7 +97,7 @@
 
   /* --- debug / automated-test hook --- */
   g.__game = {
-    Game, Save, Render, Input, UI, Snd, DATA, U,
+    Game, Save, Render, Input, UI, Snd, DATA, U, Skin, Sprites,
     fps: () => fps,
     state: () => Game.state,
     // deterministic helpers used by the headless test-suite

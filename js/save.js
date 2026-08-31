@@ -17,7 +17,7 @@
       equipped: 'ar',
       wUpg: wu,                    // per-weapon upgrade levels
       pUpg: { hp: 0, spd: 0, amo: 0, arm: 0, crt: 0 },
-      settings: { sens: DEFAULT_SENS, sfx: 1, bgm: 1, shake: 1, lefty: 0, quality: 'AUTO', aim: 1 },
+      settings: { sens: DEFAULT_SENS, sfx: 1, bgm: 1, shake: 1, lefty: 0, quality: 'AUTO', aim: 1, skin: 'POP' },
       setRev: 1,
       totalKills: 0, totalPlays: 0, seenTutorial: 0
     };
@@ -53,6 +53,7 @@
         this.data.setRev = 1;
       }
       this.data.settings.sens = U.clamp(this.data.settings.sens | 0, 60, 400) || DEFAULT_SENS;
+      if (this.data.settings.skin !== 'MIL') this.data.settings.skin = 'POP';
       this.data.coins = Math.max(0, this.data.coins | 0);
       return this.data;
     },

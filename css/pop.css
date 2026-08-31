@@ -1,0 +1,285 @@
+/* =====================================================================
+ * pop.css — POPスキン。body.pop が付いているときだけ効く上書き。
+ * 角丸・太い輪郭・原色・弾むモーション。明るい背景でも情報が沈まないよう、
+ * HUDは必ず「濃い縁 + 白ベース」で抜く。
+ * ===================================================================== */
+body.pop{
+  --accent:#ff4fa8;
+  --accent2:#ffd23f;
+  --danger:#ff3b5c;
+  --ok:#2fd98a;
+  --ink:#1b2233;
+  --bg:#141a2b;
+  --panel:rgba(255,255,255,.94);
+  --line:rgba(27,34,51,.16);
+  --txt:#1b2233;
+  font-family:"Baloo 2","Nunito","Hiragino Maru Gothic ProN","Rounded Mplus 1c",
+    "Hiragino Sans","Noto Sans JP",system-ui,sans-serif;
+  font-weight:800;
+}
+body.pop #app{background:#141a2b;}
+
+/* ---------- 共通の板 ---------- */
+body.pop .icon-btn,
+body.pop .wslot,
+body.pop .tutorial,
+body.pop .reload-bar{
+  border-radius:999px;
+  border:3px solid var(--ink);
+  background:#fff;
+  color:var(--ink);
+  box-shadow:0 3px 0 rgba(27,34,51,.35);
+}
+body.pop .tutorial{border-radius:18px;border-left-width:3px;font-weight:800;}
+body.pop .reload-bar{border-radius:999px;overflow:hidden;}
+body.pop .reload-bar div{background:linear-gradient(90deg,#ffd23f,#ff9f4a);}
+body.pop .reload-bar span{color:var(--ink);font-weight:900;}
+
+/* ---------- HP ---------- */
+body.pop .hp-block{
+  background:#fff;border:3px solid var(--ink);border-radius:999px;
+  padding:4px 12px 6px;box-shadow:0 3px 0 rgba(27,34,51,.35);
+}
+body.pop .hp-label{color:#ff4fa8;font-weight:900;}
+body.pop .hp-text{color:var(--ink);font-weight:900;}
+body.pop .hp-bar{border-radius:999px;border:2px solid var(--ink);background:#e6ebf2;height:11px;}
+body.pop .hp-fill{background:linear-gradient(90deg,#2fd98a,#8bf7c2);}
+body.pop .hp-fill.low{background:linear-gradient(90deg,#ff3b5c,#ff9f4a);}
+body.pop .hp-lag{background:#ffd23f;}
+
+/* ---------- 上部の情報 ---------- */
+body.pop .hud-center-top{
+  background:#fff;border:3px solid var(--ink);border-radius:20px;
+  padding:3px 14px 5px;box-shadow:0 3px 0 rgba(27,34,51,.35);
+  align-self:flex-start;flex:0 1 auto;margin:0 auto;
+}
+body.pop .stage-tag{color:#ff4fa8;font-weight:900;letter-spacing:.16em;}
+body.pop .obj-text{color:var(--ink);font-weight:900;text-shadow:none;}
+body.pop .obj-progress{color:#f08a1f;font-weight:900;}
+body.pop .timer{
+  color:var(--ink);background:#fff;border:3px solid var(--ink);border-radius:999px;
+  padding:2px 12px;font-weight:900;box-shadow:0 3px 0 rgba(27,34,51,.35);
+}
+
+/* ---------- 弾数・スコア ---------- */
+body.pop .wpn-name{color:#fff;-webkit-text-stroke:3px var(--ink);paint-order:stroke fill;font-weight:900;}
+body.pop .mag,body.pop .slash,body.pop .res{
+  color:#fff;-webkit-text-stroke:5px var(--ink);paint-order:stroke fill;font-weight:900;
+  text-shadow:0 3px 0 rgba(27,34,51,.35);
+}
+body.pop .mag.empty{color:#ff3b5c;}
+body.pop .stat{
+  background:#fff;border:3px solid var(--ink);border-radius:999px;padding:1px 10px;
+  color:var(--ink);font-weight:900;text-shadow:none;box-shadow:0 3px 0 rgba(27,34,51,.35);
+}
+body.pop .stat-ico.coin{color:#f0a81f;}
+body.pop .wslot{min-width:96px;justify-content:center;font-weight:900;opacity:.75;}
+body.pop .wslot.active{opacity:1;background:#ffd23f;box-shadow:0 3px 0 rgba(27,34,51,.45);}
+
+/* ---------- 照準・ヒット ---------- */
+body.pop .ch{background:#fff;box-shadow:0 0 0 2px var(--ink);border-radius:2px;}
+body.pop .ch-dot{background:#ff4fa8;box-shadow:0 0 0 2px var(--ink);border-radius:50%;}
+body.pop .crosshair.enemy .ch{background:#ff3b5c;}
+body.pop .hitmark{color:#fff;-webkit-text-stroke:4px var(--ink);paint-order:stroke fill;}
+body.pop .hitmark.crit{color:#ffd23f;}
+body.pop .feed div{
+  display:inline-block;background:#fff;border:3px solid var(--ink);border-radius:999px;
+  padding:1px 10px;color:var(--ink);font-weight:900;text-shadow:none;margin-bottom:5px;
+  box-shadow:0 3px 0 rgba(27,34,51,.3);
+}
+body.pop .feed .kill{background:#ffd23f;}
+body.pop .feed .coin{background:#8bf7c2;}
+body.pop .feed .warn{background:#ff8fa8;}
+body.pop .big-msg{
+  color:#fff;-webkit-text-stroke:8px var(--ink);paint-order:stroke fill;
+  text-shadow:0 6px 0 rgba(27,34,51,.35);letter-spacing:.06em;
+}
+body.pop .compass .cmp-arrow{background:#ff3b5c;filter:drop-shadow(0 0 0 var(--ink));}
+body.pop .compass span{color:#fff;-webkit-text-stroke:3px var(--ink);paint-order:stroke fill;}
+
+/* ---------- タッチ操作 ---------- */
+body.pop .stick-base{border:4px solid rgba(27,34,51,.45);background:rgba(255,255,255,.28);}
+body.pop .stick-knob{background:#fff;border:4px solid var(--ink);box-shadow:0 4px 0 rgba(27,34,51,.4);}
+body.pop .act-btn{
+  border:4px solid var(--ink);background:#fff;color:var(--ink);
+  box-shadow:0 5px 0 rgba(27,34,51,.45);font-weight:900;backdrop-filter:none;
+}
+body.pop .act-btn .lbl{opacity:.85;font-weight:900;}
+body.pop .act-btn.pressed{transform:translateY(4px) scale(.97);box-shadow:0 1px 0 rgba(27,34,51,.45);}
+body.pop .act-btn.fire{background:#ff4f6d;color:#fff;border-color:var(--ink);font-size:17px;}
+body.pop .act-btn.fire.pressed{background:#ff2f52;}
+body.pop .act-btn.reload{background:#ffd23f;}
+body.pop .act-btn.switch{background:#7cd3ff;}
+body.pop .act-btn.sprint{background:#8bf7c2;}
+body.pop .act-btn.crouch{background:#c9b6ff;}
+body.pop .act-btn.reload.need{animation:popneed .6s infinite;}
+@keyframes popneed{0%,100%{transform:none}50%{transform:translateY(-4px) scale(1.06)}}
+body.pop .act-btn.toggled{background:#ff9f4a;}
+
+/* ---------- メニュー ---------- */
+body.pop .menu{
+  background:
+    radial-gradient(circle at 18% 12%,#ffd23f 0,rgba(255,210,63,0) 32%),
+    radial-gradient(circle at 84% 78%,#4ad4c4 0,rgba(74,212,196,0) 34%),
+    linear-gradient(160deg,#ff8fc5 0%,#7c6bff 52%,#4ad4c4 100%);
+  color:var(--ink);
+}
+body.pop .scanlines{display:none;}
+body.pop .logo-sub{color:#fff;-webkit-text-stroke:3px var(--ink);paint-order:stroke fill;letter-spacing:.4em;}
+body.pop .logo h1{
+  color:#fff;-webkit-text-stroke:9px var(--ink);paint-order:stroke fill;
+  text-shadow:0 8px 0 rgba(27,34,51,.35);letter-spacing:.02em;
+  animation:popbob 2.6s ease-in-out infinite;
+}
+body.pop .logo h1 span{color:#ffd23f;text-shadow:0 8px 0 rgba(27,34,51,.35);}
+@keyframes popbob{0%,100%{transform:translateY(0) rotate(-1deg)}50%{transform:translateY(-8px) rotate(1deg)}}
+body.pop .logo-line{background:#fff;height:5px;border-radius:999px;box-shadow:0 3px 0 rgba(27,34,51,.35);}
+body.pop .title-foot{
+  color:var(--ink);background:#fff;border:3px solid var(--ink);border-radius:999px;
+  padding:4px 16px;opacity:1;font-weight:900;box-shadow:0 3px 0 rgba(27,34,51,.3);
+}
+body.pop .mbtn{
+  clip-path:none;border-radius:999px;border:4px solid var(--ink);
+  background:#fff;color:var(--ink);font-weight:900;letter-spacing:.12em;
+  box-shadow:0 6px 0 rgba(27,34,51,.45);padding:12px 18px;
+}
+body.pop .mbtn:active{transform:translateY(5px);box-shadow:0 1px 0 rgba(27,34,51,.45);}
+body.pop .mbtn.primary{background:#ffd23f;color:var(--ink);}
+body.pop .mbtn.locked,body.pop .mbtn:disabled{filter:none;opacity:.5;}
+body.pop .panel-head{background:none;}
+body.pop .panel-head h2{
+  color:#fff;-webkit-text-stroke:5px var(--ink);paint-order:stroke fill;letter-spacing:.16em;
+}
+body.pop .back-btn{
+  border:3px solid var(--ink);background:#fff;color:var(--ink);border-radius:999px;
+  font-weight:900;box-shadow:0 3px 0 rgba(27,34,51,.35);
+}
+body.pop .coin-badge{
+  background:#ffd23f;border:3px solid var(--ink);border-radius:999px;padding:3px 12px;
+  color:var(--ink);font-weight:900;box-shadow:0 3px 0 rgba(27,34,51,.35);
+}
+
+/* ---------- ステージ選択 ---------- */
+body.pop .stage-card{
+  clip-path:none;border-radius:22px;border:4px solid var(--ink);background:#fff;
+  color:var(--ink);box-shadow:0 6px 0 rgba(27,34,51,.4);padding:12px 14px;
+}
+body.pop .stage-card:active{transform:translateY(4px);box-shadow:0 2px 0 rgba(27,34,51,.4);}
+body.pop .stage-card .sc-no{color:#ff4fa8;font-weight:900;}
+body.pop .stage-card .sc-name{color:var(--ink);font-weight:900;}
+body.pop .stage-card .sc-meta{opacity:.72;font-weight:700;}
+body.pop .stage-card .sc-rank{color:#f0a81f;-webkit-text-stroke:3px var(--ink);paint-order:stroke fill;}
+body.pop .stage-card.locked{filter:none;opacity:.55;background:#e6ebf2;}
+body.pop .stage-card.boss{background:#ffe0ea;border-color:var(--ink);box-shadow:0 6px 0 rgba(255,59,92,.5);}
+body.pop .stage-card.custom{background:#dcfbe9;box-shadow:0 6px 0 rgba(47,217,138,.55);}
+
+/* ---------- アーマリー ---------- */
+body.pop .wtab{
+  border-radius:999px;border:3px solid var(--ink);background:#fff;color:var(--ink);
+  font-weight:900;box-shadow:0 3px 0 rgba(27,34,51,.3);
+}
+body.pop .wtab.active{background:#ffd23f;}
+body.pop .wpn-detail,body.pop .upg-row,body.pop .set-row{
+  background:#fff;border:3px solid var(--ink);border-radius:18px;color:var(--ink);
+  box-shadow:0 4px 0 rgba(27,34,51,.3);
+}
+body.pop #wpnPreview{background:#eef4fa;border-radius:14px;}
+body.pop .wpn-title{color:var(--ink);font-weight:900;}
+body.pop .wpn-desc{opacity:.72;font-weight:700;}
+body.pop .wpn-stats .sbar{background:#e6ebf2;border-radius:999px;height:9px;border:2px solid var(--ink);}
+body.pop .wpn-stats .sbar i{background:linear-gradient(90deg,#ff4fa8,#ff9f4a);border-radius:999px;}
+body.pop .wpn-stats .sbar i.up{background:linear-gradient(90deg,#2fd98a,#8bf7c2);}
+body.pop .upg-head{color:#fff;-webkit-text-stroke:3px var(--ink);paint-order:stroke fill;}
+body.pop .upg-lv i{background:#e6ebf2;border-radius:999px;height:6px;width:14px;}
+body.pop .upg-lv i.on{background:#ff4fa8;box-shadow:none;}
+body.pop .upg-buy{
+  border-radius:999px;border:3px solid var(--ink);background:#ffd23f;color:var(--ink);
+  font-weight:900;box-shadow:0 3px 0 rgba(27,34,51,.35);
+}
+body.pop .upg-buy.no{background:#e6ebf2;opacity:.65;}
+body.pop .upg-buy.max{background:#8bf7c2;color:var(--ink);opacity:1;}
+
+/* ---------- 設定 ---------- */
+body.pop .toggle{
+  border-radius:999px;border:3px solid var(--ink);background:#e6ebf2;color:#7b8794;
+  font-weight:900;box-shadow:0 3px 0 rgba(27,34,51,.25);
+}
+body.pop .toggle[data-on="1"]{background:#2fd98a;color:var(--ink);}
+body.pop .wide-toggle{background:#7cd3ff;color:var(--ink);}
+body.pop .danger-btn{background:#ff8fa8;color:var(--ink);}
+body.pop .hint{color:#fff;-webkit-text-stroke:2px rgba(27,34,51,.7);paint-order:stroke fill;opacity:1;}
+
+/* ---------- ダイアログ ---------- */
+body.pop .overlay{background:rgba(27,34,51,.55);}
+body.pop .dialog{
+  clip-path:none;border-radius:28px;border:5px solid var(--ink);
+  background:#fff;color:var(--ink);box-shadow:0 10px 0 rgba(27,34,51,.45);
+}
+body.pop .dialog h2{color:var(--ink);letter-spacing:.1em;}
+body.pop .over .over-title{color:#ff3b5c;-webkit-text-stroke:5px var(--ink);paint-order:stroke fill;text-shadow:none;}
+body.pop .clear .clear-title{color:#2fd98a;-webkit-text-stroke:5px var(--ink);paint-order:stroke fill;text-shadow:none;}
+body.pop .rank-badge{
+  background:radial-gradient(circle at 35% 30%,#fff,#ffd23f);
+  border:4px solid var(--ink);color:var(--ink);box-shadow:0 5px 0 rgba(27,34,51,.4);
+  animation:popbadge .6s cubic-bezier(.2,1.6,.4,1);
+}
+@keyframes popbadge{0%{transform:scale(.4) rotate(-25deg)}100%{transform:none}}
+body.pop .rank-badge.rB,body.pop .rank-badge.rC{background:radial-gradient(circle at 35% 30%,#fff,#b8c6d4);}
+body.pop .result-stats .rrow{background:#f2f6fa;border-radius:12px;font-weight:800;}
+body.pop .result-stats .rrow b{color:#ff4fa8;}
+body.pop .reward-line{color:#f0a81f;-webkit-text-stroke:2px var(--ink);paint-order:stroke fill;text-shadow:none;}
+body.pop .brief-stage{color:#ff4fa8;font-weight:900;}
+body.pop .brief-obj{background:#fff6d6;border-left:5px solid #ffd23f;border-radius:14px;color:var(--ink);}
+body.pop .ebadge{
+  background:#fff;border:3px solid var(--ink);border-radius:999px;color:var(--ink);
+  font-weight:900;box-shadow:0 3px 0 rgba(27,34,51,.25);
+}
+
+/* ---------- 画面全体の演出 ---------- */
+body.pop .vignette{
+  background:radial-gradient(ellipse at center,transparent 40%,rgba(255,59,92,.35) 72%,rgba(255,59,92,.85) 100%);
+}
+body.pop .vignette.lowhp{
+  background:radial-gradient(ellipse at center,transparent 36%,rgba(255,59,92,.25) 68%,rgba(255,59,92,.7) 100%);
+}
+body.pop .rotate{background:#7c6bff;color:#fff;}
+body.pop .rot-ico{color:#ffd23f;}
+body.pop .loading{background:#7c6bff;color:#fff;}
+
+/* 右上を「タイマー → 武器スロット → 弾数」の一列に整理する。
+   弾数の位置は武器4丁ぶんのスロットが入っても崩れない固定値にする */
+body.pop .wpn-slots{top:calc(44px + var(--safe-t));gap:4px;}
+body.pop .hud-ammo{
+  top:calc(172px + var(--safe-t));bottom:auto;
+  right:calc(14px + var(--safe-r));left:auto;text-align:right;
+}
+body.pop.lefty .hud-ammo{left:calc(14px + var(--safe-l));right:auto;text-align:left;}
+body.pop .ammo-row{justify-content:flex-end;}
+body.pop.lefty .ammo-row{justify-content:flex-start;}
+body.pop .reload-bar{margin-left:auto;}
+body.pop.lefty .reload-bar{margin-left:0;margin-right:auto;}
+body.pop .act-btn .lbl{font-size:7px;letter-spacing:0;margin-top:1px;}
+body.pop .act-btn .ico{font-size:20px;}
+@media (max-height:400px){
+  body.pop .wpn-slots{top:calc(40px + var(--safe-t));gap:3px;}
+  body.pop .wslot{padding:1px 8px;font-size:10px;min-width:86px;}
+  body.pop .hud-ammo{top:calc(152px + var(--safe-t));}
+  body.pop .mag{font-size:24px;}
+}
+
+/* 横画面スマホ（高さ390px程度）でメニューが収まるように詰める */
+@media (max-height:480px){
+  body.pop .logo{margin-bottom:8px;}
+  body.pop .logo-sub{font-size:9px;letter-spacing:.3em;}
+  body.pop .logo h1{font-size:clamp(24px,5.4vw,38px);-webkit-text-stroke-width:6px;text-shadow:0 5px 0 rgba(27,34,51,.35);}
+  body.pop .logo h1 span{text-shadow:0 5px 0 rgba(27,34,51,.35);}
+  body.pop .logo-line{height:4px;width:140px;margin-top:6px;}
+  body.pop .menu-btns{gap:6px;width:min(260px,56vw);}
+  body.pop .mbtn{padding:8px 14px;font-size:13px;box-shadow:0 4px 0 rgba(27,34,51,.45);}
+  body.pop .mbtn:active{transform:translateY(3px);box-shadow:0 1px 0 rgba(27,34,51,.45);}
+  body.pop .title-foot{margin-top:8px;font-size:10px;padding:2px 12px;}
+  body.pop .panel-head h2{font-size:15px;-webkit-text-stroke-width:4px;}
+  body.pop .dialog{border-width:4px;box-shadow:0 7px 0 rgba(27,34,51,.45);}
+  body.pop .dlg-btns .mbtn{box-shadow:0 4px 0 rgba(27,34,51,.45);}
+  body.pop .rank-badge{width:40px;height:40px;line-height:36px;font-size:22px;}
+}

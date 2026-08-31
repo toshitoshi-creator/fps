@@ -279,6 +279,15 @@
       toggle('setShake', 'shake');
       toggle('setLefty', 'lefty', v => Input.setLefty(v));
       toggle('setAim', 'aim');
+      U.$id('setSkin').addEventListener('click', () => {
+        Snd.play('btn');
+        const cur = Save.data.settings.skin === 'MIL' ? 'MIL' : 'POP';
+        const next = cur === 'POP' ? 'MIL' : 'POP';
+        Save.data.settings.skin = next;
+        Save.save();
+        Skin.apply(next);
+        this.refreshSettings();
+      });
       U.$id('setQuality').addEventListener('click', () => {
         Snd.play('btn');
         const order = ['AUTO', 'LOW', 'MID', 'HIGH'];
@@ -317,11 +326,13 @@
       set('setSfx', s.sfx); set('setBgm', s.bgm); set('setShake', s.shake);
       set('setLefty', s.lefty); set('setAim', s.aim);
       U.$id('setQuality').textContent = s.quality;
+      U.$id('setSkin').textContent = Skin.get(s.skin).label;
       U.$id('setWipe').textContent = this._wipeArm ? '本当に削除？' : 'DELETE';
     },
 
     applySettings() {
       const s = Save.data.settings;
+      Skin.apply(s.skin);
       Input.sensitivity = s.sens;
       Input.setLefty(s.lefty);
       Snd.setSfx(s.sfx); Snd.setBgm(s.bgm);

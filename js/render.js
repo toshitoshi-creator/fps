@@ -7,7 +7,7 @@
     W: 0, H: 0, cssW: 0, cssH: 0,
     scale: 1, stripe: 2, quality: 'AUTO',
     zbuf: null, rays: 0,
-    tex: [], theme: null,
+    tex: [], theme: null, floorGrid: true,
     cam: { x: 0, y: 0, dirX: 1, dirY: 0, planeX: 0, planeY: 1, D: 1, horizon: 0, eyeZ: .5, ang: 0 },
     _grad: { key: '', ceil: null, floor: null },
     fpsAvg: 60, _autoStep: 0,
@@ -145,6 +145,22 @@
       x.fillStyle = this._grad.floor;
       const fy = U.clamp(horizon, 0, H);
       x.fillRect(0, fy, W, H - fy);
+
+      // POP: 遠近の縞で床に奥行きを出す（1ピクセル単位の床描画より遥かに軽い）
+      if (this.floorGrid && horizon < H) {
+        x.save();
+        const eye = cam.eyeZ * cam.D;
+        for (let k = 1; k <= 16; k++) {
+          const y0 = horizon + eye / (k + 1), y1 = horizon + eye / k;
+          if (y1 < fy) continue;
+          if (y0 > H) break;
+          const a = U.clamp(1 - k / 17, 0, 1) * 0.14;
+          x.fillStyle = (k % 2) ? 'rgba(255,255,255,' + a.toFixed(3) + ')'
+            : 'rgba(0,0,0,' + (a * 0.55).toFixed(3) + ')';
+          x.fillRect(0, Math.max(fy, y0), W, Math.min(H, y1) - Math.max(fy, y0));
+        }
+        x.restore();
+      }
       // horizon haze
       if (horizon > -20 && horizon < H + 20) {
         x.globalAlpha = 0.5;
@@ -186,8 +202,9 @@
         x.drawImage(tex, tx, srcY, 1, srcH, sx, dy0, SW, dy1 - dy0);
 
         // distance fog + side shading
-        let a = U.clamp((dist - 3.2) / 22, 0, 0.58);
-        if (hit.side === 1) a = Math.min(0.66, a + 0.13);
+        const fogMax = this.floorGrid ? 0.46 : 0.58;    // POPは白飛びを抑える
+        let a = U.clamp((dist - 3.2) / 22, 0, fogMax);
+        if (hit.side === 1) a = Math.min(fogMax + 0.1, a + 0.13);
         if (a > 0.02) {
           x.globalAlpha = a;
           x.fillStyle = fogR;
@@ -382,9 +399,15 @@
       const yc = cam.horizon + (cam.eyeZ - pt.z) * lineH;
       x.save();
       x.globalAlpha = U.clamp(pt.life / pt.maxLife, 0, 1);
-      if (pt.add) x.globalCompositeOperation = 'lighter';
       x.fillStyle = pt.color;
-      x.fillRect(p.sx - s / 2, yc - s / 2, s, s);
+      if (Sprites.style === 'pop') {
+        // 紙吹雪のような丸／角丸。加算合成は明るい背景で飛ぶので使わない
+        x.beginPath(); x.arc(p.sx, yc, s * 0.55, 0, 7); x.fill();
+        x.strokeStyle = 'rgba(27,34,51,.5)'; x.lineWidth = Math.max(1, s * 0.16); x.stroke();
+      } else {
+        if (pt.add) x.globalCompositeOperation = 'lighter';
+        x.fillRect(p.sx - s / 2, yc - s / 2, s, s);
+      }
       x.restore();
     },
 
@@ -421,15 +444,34 @@
         const yc = this.cam.horizon + (this.cam.eyeZ - d.z) * lineH - d.rise * lineH * 0.5;
         const a = U.clamp(d.life / d.maxLife, 0, 1);
         const size = U.clamp(lineH * (d.crit ? 0.10 : 0.075), 11, 44);
+        const pop = Sprites.style === 'pop';
         x.save();
         x.globalAlpha = a;
-        x.font = 'bold ' + size.toFixed(0) + 'px "Bahnschrift",Impact,sans-serif';
-        x.textAlign = 'center';
-        x.lineWidth = Math.max(2, size * 0.16);
-        x.strokeStyle = 'rgba(0,0,0,.85)';
-        x.strokeText(d.text, p.sx, yc);
-        x.fillStyle = d.crit ? '#ffd24a' : '#ffffff';
-        x.fillText(d.text, p.sx, yc);
+        x.translate(p.sx, yc);
+        if (pop) {
+          const pulse = 1 + (1 - a) * 0.25;
+          x.rotate(d.tilt || 0);
+          x.scale(pulse, pulse);
+          x.font = '900 ' + size.toFixed(0) + 'px "Baloo 2","Nunito",system-ui,sans-serif';
+          x.textAlign = 'center';
+          x.lineJoin = 'round';
+          x.lineWidth = Math.max(3, size * 0.34);
+          x.strokeStyle = '#1b2233';
+          x.strokeText(d.text, 0, 0);
+          x.lineWidth = Math.max(2, size * 0.18);
+          x.strokeStyle = '#ffffff';
+          x.strokeText(d.text, 0, 0);
+          x.fillStyle = d.crit ? '#ffd23f' : '#ff5f7a';
+          x.fillText(d.text, 0, 0);
+        } else {
+          x.font = 'bold ' + size.toFixed(0) + 'px "Bahnschrift",Impact,sans-serif';
+          x.textAlign = 'center';
+          x.lineWidth = Math.max(2, size * 0.16);
+          x.strokeStyle = 'rgba(0,0,0,.85)';
+          x.strokeText(d.text, 0, 0);
+          x.fillStyle = d.crit ? '#ffd24a' : '#ffffff';
+          x.fillText(d.text, 0, 0);
+        }
         x.restore();
       });
       x.globalAlpha = 1;

@@ -119,6 +119,73 @@ function report() {
   ok('自分で変えた感度は上書きされない', migrated.kept === 80, 'sens=' + migrated.kept);
   await page.evaluate(() => { __game.Save.wipe(); __game.UI.applySettings(); });
 
+  /* ================= 2c. ビジュアルスキン ================= */
+  section('2c. ビジュアルスキン (POP / MILITARY)');
+  const skin0 = await G(() => ({
+    save: __game.Save.data.settings.skin,
+    cur: __game.Skin.current.id,
+    body: document.body.classList.contains('pop'),
+    sprite: window.Sprites.style,
+    wall: __game.DATA.STAGES[0].theme.walls[0],
+    grunt: __game.DATA.ENEMIES.grunt.palette.main
+  }));
+  ok('既定はPOPスキン', skin0.save === 'POP' && skin0.cur === 'POP', 'skin=' + skin0.cur);
+  ok('body に pop クラスが付く', skin0.body === true);
+  ok('スプライトもPOP描画になる', skin0.sprite === 'pop');
+  ok('ステージ配色がPOPになっている', skin0.wall === '#ff9f4a', skin0.wall);
+  ok('敵の配色がPOPになっている', skin0.grunt === '#4fd48a', skin0.grunt);
+
+  await page.click('[data-nav="settings"]'); await page.waitForTimeout(150);
+  ok('設定にビジュアル項目がある', (await page.textContent('#setSkin')) === 'POP');
+  await page.click('#setSkin'); await page.waitForTimeout(200);
+  const skin1 = await G(() => ({
+    save: __game.Save.data.settings.skin, cur: __game.Skin.current.id,
+    body: document.body.classList.contains('pop'), sprite: window.Sprites.style,
+    wall: __game.DATA.STAGES[0].theme.walls[0], grunt: __game.DATA.ENEMIES.grunt.palette.main
+  }));
+  ok('タップでMILITARYに切り替わる', skin1.cur === 'MIL' && skin1.save === 'MIL', skin1.cur);
+  ok('pop クラスが外れる', skin1.body === false);
+  ok('ステージ配色も戻る', skin1.wall === '#5f7f94', skin1.wall);
+  ok('敵の配色も戻る', skin1.grunt === '#54a06d', skin1.grunt);
+  const spriteSwap = await page.evaluate(() => {
+    const a = window.Sprites.getEnemySprites('grunt').stand;
+    window.Skin.apply('POP');
+    const b = window.Sprites.getEnemySprites('grunt').stand;
+    const px = c => { const x = c.getContext('2d'); return x.getImageData(c.width / 2, c.height * 0.55, 1, 1).data.join(','); };
+    return { same: a === b, colA: px(a), colB: px(b) };
+  });
+  ok('スキンで敵スプライトが作り直される', !spriteSwap.same && spriteSwap.colA !== spriteSwap.colB,
+    spriteSwap.colA + ' → ' + spriteSwap.colB);
+  await page.evaluate(() => { __game.Save.data.settings.skin = 'MIL'; __game.Save.save(); });
+  await page.reload();
+  await page.waitForFunction(() => window.__game && window.__game.state);
+  await page.waitForTimeout(300);
+  ok('スキン設定がリロード後も残る', (await G(() => __game.Skin.current.id)) === 'MIL');
+  await page.evaluate(() => {
+    __game.Save.data.settings.skin = 'POP'; __game.Save.save(); __game.Skin.apply('POP');
+  });
+  ok('POPへ戻せる', (await G(() => __game.Skin.current.id)) === 'POP');
+  const bothRender = await page.evaluate(async () => {
+    const out = [];
+    for (const sk of ['POP', 'MIL']) {
+      __game.Skin.apply(sk);
+      __game.Game.startStage(1);
+      for (let i = 0; i < 20; i++) { __game.Game.update(1 / 60); await new Promise(r => setTimeout(r, 0)); }
+      __game.Game.render();
+      const c = document.getElementById('view');
+      const d = c.getContext('2d').getImageData(c.width / 2, c.height * 0.75, 1, 1).data;
+      out.push({ sk, floor: d[0] + ',' + d[1] + ',' + d[2], state: __game.state() });
+    }
+    __game.Skin.apply('POP');
+    __game.Game.quitToMenu(); __game.UI.showScreen('title');
+    return out;
+  });
+  ok('どちらのスキンでも描画が走る', bothRender.every(r => r.state === 'playing'),
+    bothRender.map(r => r.sk + ':' + r.floor).join(' / '));
+  ok('スキンで床の色が実際に変わる', bothRender[0].floor !== bothRender[1].floor);
+  await page.evaluate(() => { __game.Save.wipe(); __game.UI.applySettings(); __game.UI.showScreen('title'); });
+  await page.waitForTimeout(150);
+
   /* ================= 3. ゲーム開始 ================= */
   section('3. ゲーム開始 → 実プレイ');
   await page.click('[data-nav="start"]'); await page.waitForTimeout(150);

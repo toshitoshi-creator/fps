@@ -421,7 +421,7 @@
       const wy = cam.y + uy * (hitDist - 0.02);
       const wz = cam.eyeZ - (sy - cam.horizon) / cam.D * hitDist * perpFactor;
       if (wall.hit) {
-        this.spawnImpact(wx, wy, U.clamp(wz, 0.05, 0.98), '#ffd9a0');
+        this.spawnImpact(wx, wy, U.clamp(wz, 0.05, 0.98), (Sprites.fx && Sprites.fx.impact) || '#ffd9a0');
         Snd.play('impact_wall', { vol: 0.45 });
       }
       return { enemy: null, crit: false, wx, wy, wz: U.clamp(wz, 0.05, 1.2), dist: hitDist };
@@ -956,7 +956,10 @@
       if (this.tracers.length > 40) this.tracers.shift();
     },
     addDamageNumber(x, y, z, text, crit) {
-      this.dmgNums.push({ alive: true, x: x + U.rand(-.2, .2), y: y + U.rand(-.2, .2), z, text, crit, rise: 0, life: 0.85, maxLife: 0.85 });
+      this.dmgNums.push({
+        alive: true, x: x + U.rand(-.2, .2), y: y + U.rand(-.2, .2), z, text, crit,
+        rise: 0, life: 0.85, maxLife: 0.85, tilt: U.rand(-0.22, 0.22)
+      });
       if (this.dmgNums.length > 26) this.dmgNums.shift();
     },
     spawnBlood(x, y, z, n, color) {
@@ -975,7 +978,7 @@
         const a = Math.random() * U.TAU, s = U.rand(0.8, 3.4);
         this.parts.push({
           alive: true, x, y, z: 0.5, vx: Math.cos(a) * s, vy: Math.sin(a) * s, vz: U.rand(1.2, 4.2),
-          size: U.rand(0.02, 0.05), color: U.pick(['#ffd24a', '#ff8a3a', '#ffffff']), add: true,
+          size: U.rand(0.02, 0.05), color: U.pick((Sprites.fx && Sprites.fx.gib) || ['#ffd24a', '#ff8a3a', '#ffffff']), add: true,
           life: U.rand(0.4, 0.9), maxLife: 0.9, grav: 6
         });
       }
