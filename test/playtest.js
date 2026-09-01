@@ -66,19 +66,19 @@ function report() {
   ok('タイトル画面が表示される', await page.isVisible('#titleScreen'));
   ok('STARTボタンが存在する', await page.isVisible('[data-nav="start"]'));
   ok('ローディングが消えている', !(await page.isVisible('#loading')));
-  ok('5ステージ定義されている', (await G(() => __game.DATA.STAGES.length)) === 5);
-  ok('武器が4種類定義されている', (await G(() => __game.DATA.WEAPONS.length)) === 4);
+  ok('10ステージ定義されている', (await G(() => __game.DATA.builtinStages().length)) === 10);
+  ok('武器が6種類定義されている', (await G(() => __game.DATA.WEAPONS.length)) === 6);
 
   /* ================= 2. メニュー遷移 ================= */
   section('2. メニュー各画面が実際に動作する');
   await page.click('[data-nav="stage"]'); await page.waitForTimeout(120);
   ok('STAGE画面へ遷移', await page.isVisible('#stageScreen'));
-  ok('ステージカードが5枚生成される', (await page.locator('.stage-card').count()) === 5);
-  ok('未解放ステージがロックされている', (await page.locator('.stage-card.locked').count()) === 4);
+  ok('ステージカードが10枚生成される', (await page.locator('.stage-card').count()) === 10);
+  ok('未解放ステージがロックされている', (await page.locator('.stage-card.locked').count()) === 9);
   await page.click('#stageScreen .back-btn'); await page.waitForTimeout(120);
   await page.click('[data-nav="weapon"]'); await page.waitForTimeout(150);
   ok('ARMORY画面へ遷移', await page.isVisible('#weaponScreen'));
-  ok('武器タブが4つ', (await page.locator('.wtab').count()) === 4);
+  ok('武器タブが6つ', (await page.locator('.wtab').count()) === 6);
   ok('強化項目が表示される', (await page.locator('.upg-row').count()) >= 9);
   await page.click('#weaponScreen .back-btn'); await page.waitForTimeout(120);
   await page.click('[data-nav="settings"]'); await page.waitForTimeout(120);
@@ -530,8 +530,8 @@ function report() {
   section('17. ボスステージ');
   const bossRes = await page.evaluate(async () => {
     const G = __game.Game;
-    __game.Save.data.cleared = [1, 2, 3, 4]; __game.Save.save();
-    G.startStage(5);
+    __game.Save.data.cleared = [1, 2, 3, 4, 5, 6, 7, 8, 9]; __game.Save.save();
+    G.startStage(10);
     G.player.maxHp = 1e6; G.player.hp = 1e6;    // tester is invulnerable; we only probe the boss
     const boss = G.boss;
     const phases = new Set();
@@ -552,16 +552,16 @@ function report() {
     return { phases: [...phases], projMax, waves, enemies, state: G.state, hp: boss.maxHp };
   });
   ok('ボスが出現する', bossRes.hp >= 1400, 'boss maxHP=' + bossRes.hp);
-  ok('ボスが複数フェーズを持つ', bossRes.phases.length >= 3, 'phases=' + bossRes.phases.join(','));
+  ok('ボスが4フェーズを持つ', bossRes.phases.length >= 4, 'phases=' + bossRes.phases.join(','));
   ok('ボスが攻撃してくる（弾を撃つ）', bossRes.projMax > 0, 'max projectiles=' + bossRes.projMax);
-  ok('援軍が出現する', bossRes.waves >= 3, 'waves=' + bossRes.waves);
+  ok('援軍が出現する', bossRes.waves >= 4, 'waves=' + bossRes.waves);
   ok('ボス撃破でクリアになる', bossRes.state === 'clear');
-  ok('最終ステージまでクリアできる', await G(() => __game.Save.data.cleared.includes(5)));
+  ok('最終ステージまでクリアできる', await G(() => __game.Save.data.cleared.includes(10)));
 
   /* ================= 17b. 目標タイプの違い ================= */
   section('17b. ステージ目標のバリエーション');
   const objs = await G(() => __game.DATA.STAGES.map(s => s.objective));
-  ok('ステージごとに目標が異なる', new Set(objs).size >= 3, objs.join(','));
+  ok('ステージごとに目標が異なる', new Set(objs).size >= 6, objs.join(','));
   const countRes = await page.evaluate(async () => {
     const G = __game.Game;
     G.startStage(3);
@@ -577,11 +577,289 @@ function report() {
   ok('全滅させなくても目標達成でクリアできる', countRes.state === 'clear' && countRes.leftAlive > 0,
     '残存 ' + countRes.leftAlive + '体でクリア');
 
+
+  /* ================= 17c. 射撃モード ================= */
+  section('17c. 4種類の射撃モード');
+  const modes = await page.evaluate(async () => {
+    const G = __game.Game, S = __game.Save, I = __game.Input;
+    ['smg', 'br', 'sg', 'sr', 'rl'].forEach(w => S.unlockWeapon(w));
+    S.data.coins = 0; S.save();
+    G.startStage(1);
+    const step = async n => { for (let i = 0; i < n; i++) { G.update(1 / 60); await new Promise(r => setTimeout(r, 0)); } };
+    const pick = id => {
+      const i = G.player.weapons.findIndex(w => w.id === id);
+      G.player.wIdx = i; G.player.switchT = 0; G.player.pendingIdx = -1;
+      G.player.burstLeft = 0; G.player.charge = 0; G.player.semiLatch = false;
+      G.player.weapon.mag = G.player.weapon.magMax;
+      return G.player.weapon;
+    };
+    const out = {};
+    // AUTO: 押しっぱなしで撃ち続ける
+    let w = pick('ar'); I._btnFire = true; await step(40); I._btnFire = false; await step(2);
+    out.auto = w.magMax - w.mag;
+    // SEMI: 押しっぱなしでも1発
+    w = pick('sg'); I._btnFire = true; await step(40); I._btnFire = false; await step(2);
+    out.semi = w.magMax - w.mag;
+    // BURST: 1回のトリガーで3発
+    w = pick('br'); I._btnFire = true; await step(40); I._btnFire = false; await step(4);
+    out.burst = w.magMax - w.mag;
+    // CHARGE: 押している間は撃たず、離した瞬間に1発
+    w = pick('rl'); I._btnFire = true; await step(70);
+    out.chargeHeld = w.magMax - w.mag;
+    out.chargeVal = G.player.charge;
+    I._btnFire = false; await step(4);
+    out.chargeFired = w.magMax - w.mag;
+    out.rockets = G.projectiles.filter(p => p.owner === 'player').length;
+    I._btnFire = false;
+    return out;
+  });
+  ok('AUTOは押しっぱなしで連射する', modes.auto >= 5, modes.auto + '発');
+  ok('SEMIは押しっぱなしでも1発だけ', modes.semi === 1, modes.semi + '発');
+  ok('BURSTは1トリガーで3発', modes.burst === 3, modes.burst + '発');
+  ok('CHARGEは押している間は発射しない', modes.chargeHeld === 0);
+  ok('CHARGEは満タンまで溜まる', modes.chargeVal > 0.99, 'charge=' + modes.chargeVal.toFixed(2));
+  ok('CHARGEは指を離すと発射する', modes.chargeFired === 1);
+  ok('爆裂弾が実弾として飛ぶ', modes.rockets >= 1, modes.rockets + '発');
+
+  const splash = await page.evaluate(() => {
+    const G = __game.Game;
+    G.startStage(7);
+    // 敵を1か所に集めて爆風の範囲ダメージを確認する
+    const live = G.enemies.filter(e => e.state !== 'dead').slice(0, 4);
+    live.forEach((e, i) => { e.x = 12 + (i % 2) * 0.7; e.y = 6 + ((i / 2) | 0) * 0.7; });
+    const hp0 = live.map(e => e.hp);
+    G.explode(12.3, 6.3, 0.6, 2.5, 60, 0.35);
+    const hurt = live.filter((e, i) => e.hp < hp0[i]).length;
+    const far = G.enemies.find(e => Math.hypot(e.x - 12.3, e.y - 6.3) > 8);
+    return { hurt, total: live.length, farUntouched: !far || far.hp === far.maxHp };
+  });
+  ok('爆風が複数の敵に当たる', splash.hurt >= 3, splash.hurt + '/' + splash.total + '体');
+  ok('爆風は範囲外の敵に当たらない', splash.farUntouched);
+
+  /* ================= 17d. 目標タイプ ================= */
+  section('17d. 目標タイプ（生存 / 拠点確保 / 到達）');
+  const surv = await page.evaluate(async () => {
+    const G = __game.Game;
+    G.startStage(4);
+    const t0 = G.surviveLeft;
+    let maxE = 0;
+    for (let i = 0; i < 60 * 12; i++) {
+      G.update(1 / 60);
+      G.player.hp = G.player.maxHp;                 // 検証用に無敵
+      maxE = Math.max(maxE, G.enemies.filter(e => e.state !== 'dead').length);
+      if (i % 120 === 0) await new Promise(r => setTimeout(r, 0));
+    }
+    const mid = G.surviveLeft;
+    G.surviveLeft = 0.01;
+    for (let i = 0; i < 140; i++) { G.update(1 / 60); await new Promise(r => setTimeout(r, 0)); if (G.state !== 'playing') break; }
+    return { t0, mid, maxE, state: G.state };
+  });
+  ok('生存ステージのタイマーが減る', surv.mid < surv.t0 - 10, surv.t0 + 's → ' + surv.mid.toFixed(1) + 's');
+  ok('生存中は敵が湧き続ける', surv.maxE >= 3, '最大同時 ' + surv.maxE + '体');
+  ok('時間経過でクリアになる', surv.state === 'clear', 'state=' + surv.state);
+
+  const cap = await page.evaluate(async () => {
+    const G = __game.Game;
+    G.startStage(8);
+    const zones = G.zones.length;
+    const step = async n => { for (let i = 0; i < n; i++) { G.update(1 / 60); G.player.hp = G.player.maxHp; await new Promise(r => setTimeout(r, 0)); } };
+    // 1つ目の拠点へ立つ → ゲージが溜まる
+    G.player.x = G.zones[0].x; G.player.y = G.zones[0].y;
+    await step(30);
+    const partial = G.zones[0].progress;
+    await step(60 * 5);
+    const first = G.zones[0].done;
+    // 残りも確保
+    for (let i = 1; i < G.zones.length; i++) {
+      G.player.x = G.zones[i].x; G.player.y = G.zones[i].y;
+      await step(60 * 5);
+    }
+    for (let i = 0; i < 140; i++) { G.update(1 / 60); await new Promise(r => setTimeout(r, 0)); if (G.state !== 'playing') break; }
+    return { zones, partial, first, state: G.state };
+  });
+  ok('拠点が3か所ある', cap.zones === 3, cap.zones + 'か所');
+  ok('拠点に立つとゲージが溜まる', cap.partial > 0.05 && cap.partial < 1, 'progress=' + cap.partial.toFixed(2));
+  ok('留まり続けると確保できる', cap.first === true);
+  ok('全拠点確保でクリアになる', cap.state === 'clear', 'state=' + cap.state);
+
+  const reach = await page.evaluate(async () => {
+    const G = __game.Game;
+    G.startStage(9);
+    const z = G.zones[0];
+    const need = G.stage.reachKills;
+    const step = async n => { for (let i = 0; i < n; i++) { G.update(1 / 60); G.player.hp = G.player.maxHp; await new Promise(r => setTimeout(r, 0)); if (G.state !== 'playing') return; } };
+    await step(60);
+    const lockedAtStart = z.locked === true;
+    // 撃破数が足りないうちは脱出地点に立ってもクリアしない
+    G.player.x = z.x; G.player.y = z.y;
+    await step(90);
+    const blocked = G.state === 'playing' && !z.done;
+    // 規定数を倒すと解放される
+    const live = G.enemies.filter(e => e.state !== 'dead').slice(0, need);
+    live.forEach(e => { let n = 0; while (e.state !== 'dead' && n++ < 300) G.damageEnemy(e, 999, false, 'body', .6); });
+    await step(30);
+    const opened = z.locked === false;
+    G.player.x = z.x; G.player.y = z.y;
+    await step(180);
+    return {
+      kind: z.kind, need, lockedAtStart, blocked, opened,
+      state: G.state, aliveLeft: G.enemies.filter(e => e.state !== 'dead').length
+    };
+  });
+  ok('脱出地点が設定されている', reach.kind === 'exit');
+  ok('開始時は脱出地点が封鎖されている', reach.lockedAtStart === true, '解放条件 ' + reach.need + '体撃破');
+  ok('撃破数が足りないと脱出できない', reach.blocked === true);
+  ok('規定数を倒すと脱出地点が解放される', reach.opened === true);
+  ok('解放後に到達するとクリアになる', reach.state === 'clear', 'state=' + reach.state);
+  ok('敵が残っていてもクリアできる', reach.aliveLeft > 0, '残り' + reach.aliveLeft + '体');
+
+  /* ================= 17e. 成長・コンボ ================= */
+  section('17e. レベル / 経験値 / コンボ');
+  const prog = await page.evaluate(async () => {
+    const S = __game.Save, G = __game.Game;
+    S.wipe(); __game.UI.applySettings();
+    G.startStage(7);
+    const lv0 = S.levelInfo(), hp0 = G.player.maxHp;
+    const e = G.enemies.find(x => x.state !== 'dead');
+    const xp0 = S.data.totalXp;
+    while (e.state !== 'dead') G.damageEnemy(e, 999, false, 'body', .6);
+    const xpGain = S.data.totalXp - xp0;
+    // 連続撃破でコンボ
+    const live = G.enemies.filter(x => x.state !== 'dead').slice(0, 4);
+    live.forEach(x => { while (x.state !== 'dead') G.damageEnemy(x, 999, false, 'body', .6); });
+    const combo = G.player.combo;
+    G.hurtPlayer(1, 0);
+    const afterHurt = G.player.combo;
+    // 大量に経験値を入れてレベルアップ
+    G.addXp(3000);
+    return {
+      lv0: lv0.level, xpGain, combo, afterHurt,
+      lv1: S.data.level, hp0, hp1: G.player.maxHp, best: G.player.bestCombo
+    };
+  });
+  ok('敵撃破で経験値が入る', prog.xpGain > 0, '+' + prog.xpGain + ' XP');
+  ok('連続撃破でコンボが上がる', prog.combo >= 4, prog.combo + ' 連続');
+  ok('被弾でコンボが切れる', prog.afterHurt === 0);
+  ok('最大コンボが記録される', prog.best >= 4, prog.best);
+  ok('経験値でレベルが上がる', prog.lv1 > prog.lv0, 'LV' + prog.lv0 + ' → LV' + prog.lv1);
+  ok('レベルアップで最大HPが増える', prog.hp1 > prog.hp0, prog.hp0 + ' → ' + prog.hp1);
+
+  const buffs = await page.evaluate(async () => {
+    const G = __game.Game;
+    G.startStage(1);
+    const e = G.enemies[0];
+    const base = G.calcDamage(G.player.weapon, 1, 1, false, e);
+    G.player.buffs.power = 5;
+    const powered = G.calcDamage(G.player.weapon, 1, 1, false, e);
+    G.player.buffs = { shield: 5 };
+    const hp0 = G.player.hp; G.player.hurtCd = 0;
+    G.hurtPlayer(40, 0);
+    const shielded = hp0 - G.player.hp;
+    G.player.buffs = {};
+    G.player.hp = hp0; G.player.hurtCd = 0;
+    G.hurtPlayer(40, 0);
+    const plain = hp0 - G.player.hp;
+    // 時間で切れる
+    G.player.buffs = { haste: 0.1 };
+    for (let i = 0; i < 20; i++) G.update(1 / 60);
+    return { base, powered, shielded, plain, expired: Object.keys(G.player.buffs).length === 0 };
+  });
+  ok('攻撃力アップが効く', buffs.powered > buffs.base * 1.4,
+    buffs.base.toFixed(0) + ' → ' + buffs.powered.toFixed(0));
+  ok('シールドで被ダメが減る', buffs.shielded < buffs.plain, buffs.plain + ' → ' + buffs.shielded);
+  ok('バフは時間で切れる', buffs.expired);
+
+  /* ================= 17f. 敵AIの予兆と後退 ================= */
+  section('17f. 攻撃予兆 / 後退AI / エイムアシスト');
+  const tele = await page.evaluate(async () => {
+    const G = __game.Game;
+    G.startStage(3);
+    const R = __game.Render, m = G.map;
+    const e = G.enemies.find(x => x.type === 'shooter');
+    // 壁に埋まらず、かつ敵から視線が通る位置を探して立たせる
+    let placed = false;
+    for (let a = 0; a < 32 && !placed; a++) {
+      for (const dist of [9, 8, 7, 10, 6]) {
+        const ang = a / 32 * Math.PI * 2;
+        const x = e.x + Math.cos(ang) * dist, y = e.y + Math.sin(ang) * dist;
+        if (x < 1 || y < 1 || x > m.w - 1 || y > m.h - 1) continue;
+        if (m.grid[(y | 0) * m.w + (x | 0)]) continue;
+        if (!R.los(m, e.x, e.y, x, y)) continue;
+        G.player.x = x; G.player.y = y; placed = true; break;
+      }
+    }
+    if (!placed) return { err: '配置できず' };
+    G.player.ang = Math.atan2(e.y - G.player.y, e.x - G.player.x);
+    e.ang = Math.atan2(G.player.y - e.y, G.player.x - e.x);
+    e.state = 'attack'; e.atkCd = 0; e.windupT = 0; e.hasSeen = true;
+    e.lastSeenX = G.player.x; e.lastSeenY = G.player.y;
+    const hp0 = G.player.hp;
+    let sawWindup = false, dmgFrame = -1;
+    for (let i = 0; i < 240; i++) {
+      G.update(1 / 60);
+      if (e.windupT > 0) sawWindup = true;
+      if (dmgFrame < 0 && G.player.hp < hp0) dmgFrame = i;
+      await new Promise(r => setTimeout(r, 0));
+      if (dmgFrame >= 0) break;
+    }
+    return { sawWindup, dmgFrame, laser: !!e.def.laser, windup: e.def.windup, sawLaser: e.laserX !== 0 };
+  });
+  ok('狙撃兵はレーザー予兆を持つ', tele.laser === true && tele.windup >= 0.5, 'windup=' + tele.windup + 's');
+  ok('攻撃前に必ず予兆が入る', tele.sawWindup === true, tele.err || '');
+  ok('レーザーがプレイヤーを追尾する', tele.sawLaser === true);
+  ok('予兆から着弾まで回避時間がある', tele.dmgFrame < 0 || tele.dmgFrame > 20,
+    tele.dmgFrame < 0 ? '被弾せず回避可能' : (tele.dmgFrame / 60).toFixed(2) + '秒後');
+
+  const retreat = await page.evaluate(async () => {
+    const G = __game.Game;
+    G.startStage(8);
+    const e = G.enemies.find(x => x.type === 'elite');
+    G.player.x = e.x + 3; G.player.y = e.y;
+    e.state = 'chase'; e.hasSeen = true;
+    const d0 = Math.hypot(e.x - G.player.x, e.y - G.player.y);
+    G.damageEnemy(e, e.maxHp * 0.7, false, 'body', .6);
+    const seen = new Set();
+    let d1 = d0;
+    for (let i = 0; i < 150; i++) {
+      G.update(1 / 60);
+      seen.add(e.state);
+      d1 = Math.hypot(e.x - G.player.x, e.y - G.player.y);
+      await new Promise(r => setTimeout(r, 0));
+    }
+    return { states: [...seen], d0, d1, retreatAt: e.def.retreatAt };
+  });
+  ok('精鋭兵は後退AIを持つ', retreat.retreatAt > 0 && retreat.states.includes('retreat'), retreat.states.join(','));
+  ok('削られると距離を取る', retreat.d1 > retreat.d0, retreat.d0.toFixed(1) + 'm → ' + retreat.d1.toFixed(1) + 'm');
+
+  const aim = await page.evaluate(() => {
+    const S = __game.Save;
+    const out = {};
+    ['OFF', 'LOW', 'MED', 'HIGH'].forEach(k => { S.data.settings.aim = k; out[k] = S.aimAssist(); });
+    S.data.settings.aim = 'MED'; S.save();
+    return out;
+  });
+  ok('エイムアシストが4段階ある', aim.OFF === 1 && aim.LOW < aim.MED && aim.MED < aim.HIGH,
+    JSON.stringify(aim));
+  ok('最強でも当たり判定は2倍未満（狙わなくても当たる状態にしない）', aim.HIGH < 2);
+
+  const vib = await page.evaluate(() => {
+    const H = __game.Haptics;
+    H.setEnabled(true);
+    const r1 = H.tap('hit');
+    H.setEnabled(false);
+    const r2 = H.tap('hit');
+    H.setEnabled(true);
+    return { supported: H.supported, on: r1, off: r2 };
+  });
+  ok('振動モジュールが例外を出さない', vib.off === false);
+  ok('未対応環境でも安全に無視される', vib.supported === false ? vib.on === false : vib.on === true,
+    vib.supported ? 'Vibration API 対応' : 'Vibration API 非対応 (iOS Safari 等)');
+
   /* ================= 18. パフォーマンス ================= */
   section('18. パフォーマンス');
   const perf = await page.evaluate(async () => {
     const G = __game.Game;
-    G.startStage(4);            // heaviest stage (9 enemies)
+    G.startStage(7);            // 最も敵が多いステージ（12体）
     for (let i = 0; i < 30; i++) { await new Promise(r => requestAnimationFrame(r)); }
     const t = [];
     let prev = performance.now();
@@ -608,18 +886,19 @@ function report() {
       const inWall = m.grid[(G.player.y | 0) * m.w + (G.player.x | 0)] !== 0;
       const enemiesInWall = G.enemies.filter(e => m.grid[(e.y | 0) * m.w + (e.x | 0)] !== 0).length;
       out.push({
-        id: st.id, enemies: G.enemies.length, inWall, enemiesInWall,
+        id: st.id, enemies: G.enemies.length, inWall, enemiesInWall, obj: st.objective,
         playing: G.state === 'playing', types: [...new Set(G.enemies.map(e => e.type))]
       });
     }
     return out;
   });
   stages.forEach(s => {
-    ok('STAGE ' + s.id + ' が正常に開始できる', s.playing && s.enemies > 0, s.enemies + '体 [' + s.types.join(',') + ']');
+    ok('STAGE ' + s.id + ' が正常に開始できる', s.playing && s.enemies > 0,
+      s.enemies + '体 [' + s.types.join(',') + ']' + (s.obj === 'survive' ? ' (湧き型)' : ''));
     ok('STAGE ' + s.id + ' の湧き位置が壁に埋まっていない', !s.inWall && s.enemiesInWall === 0);
   });
-  ok('敵の種類が5種類すべて登場する',
-    new Set(stages.flatMap(s => s.types)).size === 5,
+  ok('敵の種類が6種類すべて登場する',
+    new Set(stages.flatMap(s => s.types)).size === 6,
     [...new Set(stages.flatMap(s => s.types))].join(','));
 
   /* ================= 20. 通しプレイ（実操作のみでクリア） ================= */

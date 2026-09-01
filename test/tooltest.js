@@ -135,7 +135,7 @@ const report = () => {
   await page.waitForTimeout(400);
   const G = fn => page.evaluate(fn);
   ok('カスタムステージが登録される', await G(() => __game.DATA.STAGES.some(s => s.custom)));
-  ok('本編のステージ数は5のままである', (await G(() => __game.DATA.builtinStages().length)) === 5);
+  ok('本編のステージ数は10のままである', (await G(() => __game.DATA.builtinStages().length)) === 10);
   await page.click('[data-nav="stage"]');
   await page.waitForTimeout(250);
   ok('STAGE一覧にCUSTOMカードが出る', (await page.locator('.stage-card.custom').count()) === 1);
@@ -203,7 +203,7 @@ const report = () => {
   await page.waitForFunction(() => window.__game && window.__game.state);
   await page.waitForTimeout(300);
   ok('削除後はCUSTOMが消える', !(await G(() => __game.DATA.STAGES.some(s => s.custom))));
-  ok('本編は通常どおり動く', (await G(() => __game.DATA.STAGES.length)) === 5);
+  ok('本編は通常どおり動く', (await G(() => __game.DATA.STAGES.length)) === 10);
 
   section('9. 壊れたデータへの耐性');
   const robust = await page.evaluate(() => {
@@ -226,7 +226,7 @@ const report = () => {
   });
   ok('壊れた保存データで例外を投げない', robust.every(r => !r.threw));
   ok('壊れた保存データは取り込まない', robust.every(r => !r.added));
-  ok('壊れたデータの後も本編は5ステージ', (await G(() => __game.DATA.STAGES.length)) === 5);
+  ok('壊れたデータの後も本編は10ステージ', (await G(() => __game.DATA.STAGES.length)) === 10);
 
   section('10. 実行時エラー');
   ok('全工程を通してJSエラーが無い', errors.length === 0, errors.slice(0, 3).join(' | '));

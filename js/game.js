@@ -39,6 +39,14 @@
       this.shake = 0; this.shakeYaw = 0; this.shakePitch = 0;
       this.hitstop = 0; this.zoomT = 0; this.curZoom = 1;
       this.wavesFired = 0; this.boss = null; this._clearAt = 0;
+      this.zones = (m.zones || []).map(z => Object.assign({}, z, {
+        progress: 0, done: false, t: 0,
+        locked: z.kind === 'exit' && (stage.reachKills || 0) > 0, open: false
+      }));
+      this.spawnPoints = m.spawnPoints || [];
+      this.surviveLeft = stage.objective === 'survive' ? (stage.duration || 45) : 0;
+      this.spawnTimer = stage.objective === 'survive' ? 0.6 : (stage.spawnEvery || 0);
+      this.xpEarned = 0;
       this.flow = new Int16Array(m.w * m.h); this.flowT = 0; this.flowCell = -1;
       this._lastHudHp = -1; this._lastMag = -1; this._lastRes = -1;
       this._lastKills = -1; this._lastCoins = -1; this._lastSec = -1;
@@ -62,6 +70,9 @@
         weapons, wIdx,
         get weapon() { return this.weapons[this.wIdx]; },
         fireCd: 0, reloading: false, reloadLeft: 0, reloadTotal: 0,
+        burstLeft: 0, burstT: 0, charging: false, charge: 0,
+        combo: 0, comboT: 0, bestCombo: 0, headshots: 0, xp: 0,
+        buffs: {},
         switchT: 0, switchTotal: 0, pendingIdx: -1,
         recoilPitch: 0, recoilYaw: 0, recoilVis: 0,
         flashT: 0, bobPhase: 0, bobAmp: 0,
@@ -107,6 +118,7 @@
         state: 'idle', stateT: U.rand(0, 1.5),
         atkCd: U.rand(0.4, 1.4), burstLeft: 0, burstT: 0,
         hurtT: 0, alertT: 0, atkFlash: 0, animT: Math.random() * 3, engagedT: 0,
+        windupT: 0, windupMax: 0, pendingAtk: false, laserX: 0, laserY: 0, retreatT: 0,
         moving: false, deadT: 0, showBarT: 0,
         lastSeenX: 0, lastSeenY: 0, hasSeen: false,
         patrolX: x, patrolY: y, repathT: 0, stuckT: 0,
@@ -144,6 +156,8 @@
       this.updateEnemies(dt);
       this.updateProjectiles(dt);
       this.updatePickups(dt);
+      this.updateObjective(dt);
+      this.updateBuffs(dt);
       this.updateFx(dt);
       this.updateTutorial();
 
@@ -180,6 +194,7 @@
       // ---- movement ----
       const sprinting = Input.sprint && !wantCrouch && Input.move.y > 0.25 && !p.reloading;
       let spd = p.baseSpeed * (sprinting ? 1.52 : 1) * (wantCrouch ? 0.52 : 1) * (this.zoomT > 0.5 ? 0.55 : 1);
+      if (this.hasBuff('haste')) spd *= 1.35;
       const mx = Input.move.x, my = Input.move.y;
       const mag = Math.hypot(mx, my);
       p.moving = mag > 0.08;
@@ -222,22 +237,74 @@
       p.fireCd -= dt;
       p.flashT = Math.max(0, p.flashT - dt * 3.4);
       p.recoilVis = Math.max(0, p.recoilVis - dt * 14);
-      if (!Input.fire) p.semiLatch = false;
-      if (Input.fire && p.switchT <= 0) {
-        const semiBlocked = !p.weapon.auto && p.semiLatch;
-        if (p.reloading || semiBlocked) { /* busy / waiting for trigger release */ }
-        else if (p.weapon.mag <= 0) {
-          if (p.fireCd <= 0) { Snd.play('dry'); p.fireCd = 0.28; p.semiLatch = true; this.tryReload(); }
-        } else if (p.fireCd <= 0) {
-          if (!p.weapon.auto) p.semiLatch = true;
-          this.fire();
-        }
-      }
+      this.updateFireInput(dt);
       // auto-reload on empty mag
       if (!p.reloading && p.weapon.mag <= 0 && p.weapon.reserve > 0 && p.fireCd <= 0.02) this.tryReload();
       Input.setNeedReload(!p.reloading && p.weapon.mag <= p.weapon.magMax * 0.25 && p.weapon.reserve > 0);
 
       if (p.hurtCd > 0) p.hurtCd -= dt;
+    },
+
+    /**
+     * 射撃入力。単発 / 連射 / バースト / チャージ の4モードを扱う。
+     * バーストはトリガー1回で規定発数を撃ち切り、途中で弾が尽きたら中断する。
+     * チャージは押している間ためて、離した瞬間に発射する。
+     */
+    updateFireInput(dt) {
+      const p = this.player, w = p.weapon;
+      const busy = p.reloading || p.switchT > 0;
+
+      // --- バーストの継続発射 ---
+      if (p.burstLeft > 0) {
+        p.burstT -= dt;
+        if (w.mag <= 0) p.burstLeft = 0;
+        else if (p.burstT <= 0) {
+          this.fire();
+          p.burstLeft--;
+          p.burstT = w.burstGap;
+        }
+      }
+
+      // --- チャージ解放（指を離した瞬間） ---
+      if (!Input.fire) {
+        if (p.charging) {
+          p.charging = false;
+          if (!busy && w.mag > 0 && p.fireCd <= 0) this.fire();
+          p.charge = 0;
+        }
+        p.semiLatch = false;
+      }
+
+      if (!Input.fire || busy) {
+        if (busy) { p.charging = false; p.charge = 0; }
+        return;
+      }
+
+      if (w.mag <= 0) {
+        if (p.fireCd <= 0) { Snd.play('dry'); p.fireCd = 0.28; p.semiLatch = true; this.tryReload(); }
+        return;
+      }
+
+      switch (w.fireMode) {
+        case 'auto':
+          if (p.fireCd <= 0) this.fire();
+          break;
+        case 'burst':
+          if (!p.semiLatch && p.fireCd <= 0 && p.burstLeft <= 0) {
+            p.semiLatch = true;
+            p.burstLeft = w.burstCount;
+            p.burstT = 0;
+          }
+          break;
+        case 'charge':
+          if (!p.charging) Snd.play('charge');
+          p.charging = true;
+          p.charge = U.clamp(p.charge + dt / Math.max(0.05, w.chargeTime), 0, 1);
+          break;
+        default:                       // semi
+          if (!p.semiLatch && p.fireCd <= 0) { p.semiLatch = true; this.fire(); }
+          break;
+      }
     },
 
     moveWithCollision(ent, dx, dy, r) {
@@ -274,6 +341,7 @@
       p.reloadLeft = w.reload;
       p._rlMid = false;
       Snd.play('reload_start');
+      Haptics.tap('reload');
       UI.setReload(0);
       return true;
     },
@@ -307,12 +375,14 @@
       // rebuild the camera from the live player state so the crosshair and the
       // hitscan agree exactly (render() re-applies the identical transform)
       Render.updateCamera(p, this.shakeYaw, this.shakePitch, this.curZoom);
+      const chargeK = w.fireMode === 'charge' ? p.charge : 0;
       w.mag--;
       p.shots++;
       p.fireCd = 60 / w.rpm;
-      p.flashT = 0.11;
+      p.flashT = 0.11 + chargeK * 0.06;
       p.recoilVis = Math.min(3.2, p.recoilVis + w.recoil * 0.9);
-      Snd.play(w.sfx);
+      Snd.play(w.sfx, { vol: 1 + chargeK * 0.3 });
+      Haptics.tap(w.shake > 1.4 ? 'shootHeavy' : 'shoot');
       if (w.mag <= 3 && w.mag > 0) Snd.play('lowammo', { vol: 0.6 });
 
       // recoil kick
@@ -321,7 +391,26 @@
       const ry = (Math.random() - 0.5) * rc * 0.9;
       p.ang += ry; p.recoilYaw -= ry;
 
-      this.addShake(w.shake * (Input.crouch ? 0.7 : 1));
+      this.addShake(w.shake * (Input.crouch ? 0.7 : 1) * (1 + chargeK * 0.5));
+
+      // --- 爆裂弾: ヒットスキャンではなく実弾を飛ばして着弾で爆発させる ---
+      if (w.splash > 0) {
+        const cam0 = Render.cam;
+        const rocket = this.spawnProjectile(
+          { x: p.x, y: p.y, def: { radius: 0.1 } },
+          p.ang, w.damage * (1 + chargeK * (w.chargeBonus - 1)),
+          w.projSpeed, w.base.color
+        );
+        rocket.owner = 'player';
+        rocket.r = 0.14 + chargeK * 0.06;
+        rocket.splash = w.splash * (1 + chargeK * 0.5);
+        rocket.splashMin = w.splashMin;
+        rocket.z = cam0.eyeZ - 0.05;
+        rocket.dz = -p.pitch * 0.9;
+        this.syncHud(true);
+        if (this.tutorialStep === 3) this.tutorialStep = 4;
+        return;
+      }
 
       // spread (degrees) -> screen px offset
       let spreadDeg = w.spread;
@@ -332,7 +421,7 @@
       const D = cam.D;
       const pxPerDeg = Math.tan(Math.PI / 180) * D;
 
-      let anyHit = false, anyCrit = false;
+      let anyHit = false, anyCrit = false, anyHead = false;
       const muzzleSx = W * (Input.lefty ? 0.34 : 0.66);
       const muzzleSy = H * 0.80;
 
@@ -348,11 +437,16 @@
         }
         const sx = W / 2 + ox, sy = H / 2 + oy;
         const res = this.hitscan(sx, sy, w);
-        if (res.enemy) { anyHit = true; if (res.crit) anyCrit = true; }
+        if (res.enemy) { anyHit = true; if (res.crit) { anyCrit = true; anyHead = true; } }
         // tracer
         this.addTracer(muzzleSx, muzzleSy, res.wx, res.wy, res.wz, w.base.color);
       }
-      if (anyHit) { p.hits++; UI.hitmarker(anyCrit); }
+      if (anyHit) {
+        p.hits++;
+        UI.hitmarker(anyCrit);
+        if (anyHead) { p.headshots++; Save.data.headshots++; }
+        Haptics.tap(anyCrit ? 'crit' : 'hit');
+      }
 
       // gunfire alerts nearby enemies
       const noise = w.id === 'sr' ? 26 : (w.id === 'sg' ? 18 : 14);
@@ -374,7 +468,7 @@
       const perpFactor = (cam.dirX * rdx / rl + cam.dirY * rdy / rl);
       const wallDepth = wall.dist * perpFactor;
 
-      const assist = Save.data.settings.aim ? 1.30 : 1.0;
+      const assist = Save.aimAssist();
       let best = null, bestDepth = 1e9;
 
       for (let i = 0; i < this.enemies.length; i++) {
@@ -429,6 +523,7 @@
 
     calcDamage(w, zoneMul, dist, crit, e) {
       let d = w.damage * zoneMul;
+      if (this.hasBuff('power')) d *= 1.6;
       if (dist > w.range) {
         const t = (dist - w.range) / (w.range * 1.1);
         d *= U.clamp(1 - t, w.falloff, 1);
@@ -454,6 +549,10 @@
       if (crit) { this.addShake(0.55); this.hitstop = Math.max(this.hitstop, 0.035); UI.critFx(); }
 
       if (e.hp <= 0) this.killEnemy(e, crit);
+      else if (e.def.retreatAt && e.state !== 'retreat' && e.state !== 'dead' &&
+        e.hp / e.maxHp < e.def.retreatAt && e.retreatT <= 0) {
+        e.state = 'retreat'; e.stateT = 0; e.retreatT = 6;   // 連続で後退し続けないようクールダウン
+      }
       else if (e.hp / e.maxHp < 0.28 && !e.wounded) {
         e.wounded = true;
         if (!e.def.boss) { e.state = 'wounded'; e.stateT = 0; }
@@ -465,8 +564,19 @@
       e.state = 'dead';
       e.deadT = 0;
       this.kills++;
-      const gain = Math.round(e.def.coins * (1 + this.diffIdx * 0.12) * (crit ? 1.25 : 1));
+      const p = this.player;
+
+      // --- コンボ: 一定時間内に連続撃破すると報酬倍率が上がる ---
+      p.combo++;
+      p.comboT = 3.2;
+      if (p.combo > p.bestCombo) p.bestCombo = p.combo;
+      const comboMul = 1 + Math.min(p.combo - 1, 9) * 0.1;
+      if (p.combo >= 2) UI.setCombo(p.combo, comboMul);
+
+      const gain = Math.round(e.def.coins * (1 + this.diffIdx * 0.12) * (crit ? 1.25 : 1) * comboMul);
       this.coins += gain;
+      this.addXp(Math.round(e.def.xp * comboMul * (crit ? 1.2 : 1)));
+      Haptics.tap(e.def.boss ? 'boss' : 'kill');
       this.spawnBlood(e.x, e.y, 0.6, e.def.boss ? 60 : 18, e.def.palette.trim);
       this.spawnGibs(e.x, e.y, e.def.boss ? 40 : 12);
       this.addShake(e.def.boss ? 3.2 : 0.9);
@@ -479,9 +589,14 @@
 
       // loot
       const r = Math.random();
-      if (e.def.boss) { this.spawnPickup(e.x, e.y, 'health'); this.spawnPickup(e.x + 0.6, e.y, 'ammo'); }
-      else if (r < 0.26) this.spawnPickup(e.x, e.y, 'ammo');
-      else if (r < 0.46) this.spawnPickup(e.x, e.y, 'health');
+      if (e.def.boss) {
+        this.spawnPickup(e.x, e.y, 'health');
+        this.spawnPickup(e.x + 0.6, e.y, 'ammo');
+      } else if (r < 0.24) this.spawnPickup(e.x, e.y, 'ammo');
+      else if (r < 0.42) this.spawnPickup(e.x, e.y, 'health');
+      else if (r < 0.50) this.spawnPickup(e.x, e.y, 'power');
+      else if (r < 0.56) this.spawnPickup(e.x, e.y, 'shield');
+      else if (r < 0.61) this.spawnPickup(e.x, e.y, 'haste');
 
       if (this.tutorialStep === 4) this.tutorialStep = 5;
       if (e.def.boss) UI.bigMsg('TARGET ELIMINATED');
@@ -570,8 +685,15 @@
         if (e.hurtT > 0) e.hurtT -= dt;
         if (e.alertT > 0) e.alertT -= dt;
         if (e.showBarT > 0) e.showBarT -= dt;
+        if (e.retreatT > 0) e.retreatT -= dt;
         if (e.atkFlash > 0) e.atkFlash -= dt;
-        if (e.state === 'dead') { e.deadT += dt; continue; }
+        if (e.state === 'dead') { e.deadT += dt; e.windupT = 0; continue; }
+        if (e.windupT > 0) {
+          e.windupT -= dt;
+          // レーザーは常にプレイヤーを追うので、どこを狙われているかが分かる
+          e.laserX = p.x; e.laserY = p.y;
+          if (e.windupT <= 0 && e.pendingAtk) { e.pendingAtk = false; this.executeAttack(e); }
+        }
 
         e.stateT += dt;
         e.atkCd -= dt;
@@ -638,6 +760,15 @@
             break;
           }
 
+          case 'retreat': {
+            // 精鋭兵は削られると一度距離を取り、遮蔽を挟んでから撃ち返す
+            this.faceTo(e, p.x, p.y, dt, e.def.turn);
+            this.stepAway(e, p.x, p.y, e.speed * 1.15, dt);
+            if (sees && d > (e.def.keepDist || 6) && e.atkCd <= 0) this.tryAttack(e, dt, d);
+            if (e.stateT > 2.2 || d > e.def.atkRange) { e.state = 'chase'; e.stateT = 0; }
+            break;
+          }
+
           case 'wounded': {
             // 瀕死: melee units go berserk, others fall back while firing
             this.faceTo(e, p.x, p.y, dt, e.def.turn);
@@ -664,7 +795,7 @@
     updateBoss(e, dt, d, sees) {
       const p = this.player;
       const ratio = e.hp / e.maxHp;
-      const newPhase = ratio > 0.66 ? 1 : (ratio > 0.33 ? 2 : 3);
+      const newPhase = ratio > 0.75 ? 1 : (ratio > 0.5 ? 2 : (ratio > 0.25 ? 3 : 4));
       if (newPhase !== e.phase) {
         e.phase = newPhase;
         UI.bigMsg('PHASE ' + newPhase);
@@ -688,7 +819,7 @@
       this.faceTo(e, p.x, p.y, dt, e.def.turn);
       e.patternT -= dt;
 
-      if (e.phase === 3 && e.pattern === 2) {
+      if (e.phase >= 3 && e.pattern === 2) {
         // charge
         this.chaseStep(e, dt, true, e.speed * 2.3);
         if (d < 1.8 && e.atkCd <= 0) {
@@ -713,8 +844,8 @@
 
       if (!sees) return;
       if (e.patternT <= 0) {
-        e.pattern = (e.phase === 3) ? U.randInt(0, 2) : U.randInt(0, 1);
-        e.patternT = e.phase === 1 ? 2.6 : (e.phase === 2 ? 2.0 : 1.6);
+        e.pattern = e.phase >= 4 ? U.randInt(0, 3) : (e.phase === 3 ? U.randInt(0, 2) : U.randInt(0, 1));
+        e.patternT = e.phase === 1 ? 2.6 : (e.phase === 2 ? 2.1 : (e.phase === 3 ? 1.7 : 1.4));
         if (e.pattern === 0) {           // burst
           e.burstLeft = Math.min(5, 2 + e.phase); e.burstT = 0; e.atkFlash = 0.4;
         } else if (e.pattern === 1) {    // fan spread — wide gaps so it can be side-stepped
@@ -727,9 +858,22 @@
           e.atkFlash = 0.4;
           Snd.play('enemy_shot');
           this.addShake(0.5);
-        } else {                         // charge windup
+        } else if (e.pattern === 2) {    // charge windup
           e.patternT = 2.2;
           UI.feed('TITAN が突進してくる！', 'warn');
+          Snd.play('warn');
+        } else {                         // phase 4: 全方位リングバースト
+          UI.feed('TITAN が全方位攻撃！', 'warn');
+          UI.bigMsg('DANGER');
+          Snd.play('warn');
+          Haptics.tap('boss');
+          const n = 14;
+          for (let i = 0; i < n; i++) {
+            this.spawnProjectile(e, i / n * U.TAU, e.dmg * 0.7, e.def.projSpeed * 0.75, '#ff6ad5');
+          }
+          this.addShake(1.6);
+          e.atkFlash = 0.5;
+          e.patternT = 2.4;
         }
       }
       if (e.burstLeft > 0) {
@@ -823,12 +967,16 @@
       this.stepToward(e, bx, by, spd, dt);
     },
 
+    /**
+     * 攻撃の開始。いきなり撃たず必ず予兆（windup）を挟む。
+     * 狙撃兵はレーザーサイトを出すので、プレイヤーは遮蔽に隠れる時間を得られる。
+     */
     tryAttack(e, dt, d) {
-      if (e.atkCd > 0) return;
+      if (e.atkCd > 0 || e.windupT > 0) return;
       const p = this.player;
       const a = Math.atan2(p.y - e.y, p.x - e.x);
       if (Math.abs(U.angDiff(e.ang, a)) > 0.5) return;
-      // wait your turn — keeps firefights readable and survivable
+      // 同時に撃てる敵数を制限し、戦闘を読み取れる密度に保つ
       if (!e.def.boss && e.engagedT <= 0 && this._attackers >= this._attackLimit) {
         e.atkCd = 0.3;
         return;
@@ -837,9 +985,20 @@
       e.atkCd = e.def.atkCd / (1 + (aim - 1) * 0.35);
       e.engagedT = e.def.atkCd * 0.7;
       if (!e.def.boss) this._attackers++;
-      e.atkFlash = 0.3;
+      e.windupT = e.def.windup || 0.3;
+      e.windupMax = e.windupT;
+      e.pendingAtk = true;
+      e.atkFlash = e.windupT + 0.2;
+      if (e.def.laser) Snd.play('warn', { vol: U.clamp(1.2 / (1 + d * 0.1), 0.12, 0.5) });
+    },
+
+    /** 予兆が終わって実際に攻撃が出る瞬間 */
+    executeAttack(e) {
+      const p = this.player;
+      const d = U.dist(e.x, e.y, p.x, p.y);
+      const a = Math.atan2(p.y - e.y, p.x - e.x);
       if (e.def.melee) {
-        if (d <= e.def.atkRange) {
+        if (d <= e.def.atkRange * 1.25) {
           this.hurtPlayer(e.dmg, a + Math.PI);
           this.spawnBlood(p.x + Math.cos(a) * .3, p.y + Math.sin(a) * .3, 0.5, 6, '#ff4a4a');
           Snd.play('enemy_shot', { vol: 0.7 });
@@ -881,22 +1040,69 @@
         const pr = this.projectiles[i];
         if (!pr.alive) { this.projectiles.splice(i, 1); continue; }
         pr.life -= dt;
-        if (pr.life <= 0) { pr.alive = false; continue; }
+        if (pr.life <= 0) { this.endProjectile(pr); continue; }
         const step = pr.speed * dt;
         const nx = pr.x + pr.dx * step, ny = pr.y + pr.dy * step;
-        // wall
+        if (pr.dz) pr.z = U.clamp(pr.z + pr.dz * step, 0.06, 1.4);
+        // 壁
         if (m.grid[(ny | 0) * m.w + (nx | 0)] || nx < 0 || ny < 0 || nx >= m.w || ny >= m.h) {
-          this.spawnImpact(pr.x, pr.y, pr.z, pr.color);
-          pr.alive = false; continue;
+          this.endProjectile(pr); continue;
         }
         pr.x = nx; pr.y = ny;
-        // player hit
-        if (U.dist2(pr.x, pr.y, p.x, p.y) < 0.16) {
+
+        if (pr.owner === 'player') {
+          // 敵に直撃したら爆発
+          for (let k = 0; k < this.enemies.length; k++) {
+            const e = this.enemies[k];
+            if (e.state === 'dead') continue;
+            const rr = e.def.radius + pr.r;
+            if (U.dist2(pr.x, pr.y, e.x, e.y) < rr * rr) { this.endProjectile(pr, e); break; }
+          }
+        } else if (U.dist2(pr.x, pr.y, p.x, p.y) < 0.16) {
           this.hurtPlayer(pr.dmg, Math.atan2(-pr.dy, -pr.dx));
-          this.spawnImpact(pr.x, pr.y, pr.z, pr.color);
-          pr.alive = false;
+          this.endProjectile(pr);
         }
       }
+    },
+
+    /** 弾の消滅処理。爆裂弾ならここで範囲ダメージを起こす */
+    endProjectile(pr, directHit) {
+      pr.alive = false;
+      if (pr.splash) this.explode(pr.x, pr.y, pr.z, pr.splash, pr.dmg, pr.splashMin, directHit);
+      else this.spawnImpact(pr.x, pr.y, pr.z, pr.color);
+    },
+
+    /** 範囲ダメージ。遮蔽の裏には届かない */
+    explode(x, y, z, radius, dmg, minMul, directHit) {
+      const hit = [];
+      for (let i = 0; i < this.enemies.length; i++) {
+        const e = this.enemies[i];
+        if (e.state === 'dead') continue;
+        const d = U.dist(x, y, e.x, e.y);
+        if (d > radius + e.def.radius) continue;
+        if (e !== directHit && !Render.los(this.map, x, y, e.x, e.y)) continue;
+        const k = U.clamp(1 - d / (radius + e.def.radius), 0, 1);
+        hit.push({ e, mul: U.lerp(minMul, 1, k) });
+      }
+      const pw = this.hasBuff('power') ? 1.6 : 1;
+      hit.forEach(h => this.damageEnemy(h.e, dmg * h.mul * pw, false, 'splash', 0.6));
+      if (hit.length) this.player.hits++;
+      if (hit.length >= 3) UI.feed(hit.length + '体を巻き込んだ！', 'kill');
+
+      // 爆発演出
+      for (let i = 0; i < 26; i++) {
+        const a = Math.random() * U.TAU, s = U.rand(1.5, 6.5);
+        this.parts.push({
+          alive: true, x, y, z, vx: Math.cos(a) * s, vy: Math.sin(a) * s, vz: U.rand(0.5, 4.5),
+          size: U.rand(0.03, 0.08), color: U.pick(['#fff3b0', '#ff9f4a', '#ff5f4a']), add: true,
+          life: U.rand(0.25, 0.6), maxLife: 0.6, grav: 5
+        });
+      }
+      this.trimParts();
+      this.addShake(2.2);
+      this.hitstop = Math.max(this.hitstop, 0.05);
+      Snd.play('explosion');
+      this.makeNoise(x, y, 20);
     },
 
     hurtPlayer(dmg, fromAng) {
@@ -904,18 +1110,71 @@
       if (!p.alive || this.state !== 'playing') return;
       // brief post-hit resistance: a simultaneous volley hurts, but never one-shots
       const soften = p.hurtCd > 0 ? 0.42 : 1;
-      dmg = Math.max(1, Math.round(dmg * (1 - p.armor) * soften));
+      const shield = this.hasBuff('shield') ? 0.45 : 1;
+      // 拠点確保中は足を止めることを強制されるので、その間だけ被ダメを軽減する
+      const capturing = this.stage.objective === 'capture' &&
+        this.zones.some(z => !z.done && z.progress > 0 && U.dist2(p.x, p.y, z.x, z.y) < 1.9) ? 0.7 : 1;
+      dmg = Math.max(1, Math.round(dmg * (1 - p.armor) * soften * shield * capturing));
       p.hurtCd = 0.30;
       p.hp -= dmg;
       p.dmgTaken += dmg;
       p.lastHitAng = fromAng;
       this.addShake(0.9);
       Snd.play('hurt');
+      Haptics.tap('hurt');
+      p.combo = 0; UI.setCombo(0, 1);
       UI.damageFlash(U.clamp(dmg / 26, 0.25, 1));
       UI.dirIndicator(U.angDiff(p.ang, fromAng));
-      if (p.hp <= 0) { p.hp = 0; this.gameOver(); }
+      if (p.hp <= 0) {
+        p.hp = 0;
+        p.reloading = false; p.reloadLeft = 0; p.burstLeft = 0;
+        p.charging = false; p.charge = 0;
+        UI.setReload(null);
+        this.gameOver();
+      }
       this.syncHud(true);
     },
+
+    /* ---------------- 経験値・バフ ---------------- */
+    addXp(n) {
+      n = Math.max(0, n | 0);
+      if (!n) return;
+      this.xpEarned += n;
+      this.player.xp += n;
+      const gained = Save.addXp(n);
+      if (gained > 0) {
+        const st = Save.playerStats();
+        // レベルアップぶんの最大HPを即座に反映し、その差分だけ回復する
+        const add = st.maxHp - this.player.maxHp;
+        this.player.maxHp = st.maxHp;
+        this.player.hp = Math.min(st.maxHp, this.player.hp + Math.max(0, add));
+        this.player.baseSpeed = st.speed;
+        this.player.armor = st.armor;
+        UI.bigMsg('LEVEL UP  ' + Save.data.level);
+        UI.feed('レベル ' + Save.data.level + ' に上昇！ 最大HP+' + Math.round(add), 'coin');
+        Snd.play('levelup_big');
+        Haptics.tap('kill');
+        this.syncHud(true);
+      }
+      UI.setXp(Save.levelInfo());
+    },
+
+    /** 一時強化バフの残り時間を進める */
+    updateBuffs(dt) {
+      const p = this.player;
+      let changed = false;
+      Object.keys(p.buffs).forEach(k => {
+        p.buffs[k] -= dt;
+        if (p.buffs[k] <= 0) { delete p.buffs[k]; changed = true; }
+      });
+      if (p.comboT > 0) {
+        p.comboT -= dt;
+        if (p.comboT <= 0 && p.combo > 0) { p.combo = 0; UI.setCombo(0, 1); }
+      }
+      if (changed) UI.setBuffs(p.buffs);
+    },
+
+    hasBuff(k) { return (this.player.buffs[k] || 0) > 0; },
 
     /* ---------------- pickups / fx ---------------- */
     spawnPickup(x, y, type) {
@@ -941,7 +1200,17 @@
             const before = p.hp;
             p.hp = Math.min(p.maxHp, p.hp + Math.round(p.maxHp * 0.28));
             UI.feed('回復 +' + (p.hp - before), 'coin');
+          } else if (pk.type === 'power') {
+            p.buffs.power = 12; UI.setBuffs(p.buffs);
+            UI.feed('攻撃力アップ 12秒', 'coin'); UI.bigMsg('POWER UP');
+          } else if (pk.type === 'shield') {
+            p.buffs.shield = 12; UI.setBuffs(p.buffs);
+            UI.feed('シールド 12秒', 'coin'); UI.bigMsg('SHIELD');
+          } else if (pk.type === 'haste') {
+            p.buffs.haste = 12; UI.setBuffs(p.buffs);
+            UI.feed('移動速度アップ 12秒', 'coin'); UI.bigMsg('SPEED UP');
           }
+          Haptics.tap('ui');
           Snd.play('coin');
           this.pickups.splice(i, 1);
           this.syncHud(true);
@@ -1022,6 +1291,82 @@
     },
 
     /* ---------------- objective / flow ---------------- */
+
+    /** 目標タイプごとの毎フレーム処理（生存タイマー・湧き・拠点確保） */
+    updateObjective(dt) {
+      const st = this.stage, p = this.player;
+
+      if (st.objective === 'survive') {
+        this.surviveLeft = Math.max(0, this.surviveLeft - dt);
+        // 湧きポイントから定期的に増援を出す（画面内の敵数に上限を設ける）
+        this.spawnTimer -= dt;
+        const alive = this.enemies.filter(e => e.state !== 'dead').length;
+        if (this.spawnTimer <= 0 && this.surviveLeft > 2 && alive < (st.spawnMax || 10)) {
+          this.spawnTimer = st.spawnEvery || 6;
+          const pts = this.spawnPoints.length ? this.spawnPoints : [{ x: 1.5, y: 1.5 }];
+          const n = st.spawnBatch || 2;
+          for (let i = 0; i < n; i++) {
+            // プレイヤーから最も遠い湧き点を優先し、真横から出てこないようにする
+            const pt = pts.slice().sort((a, b) =>
+              U.dist2(b.x, b.y, p.x, p.y) - U.dist2(a.x, a.y, p.x, p.y))[i % pts.length];
+            const table = st.spawnTable || ['grunt'];
+            const e = this.spawnEnemy(table[(Math.random() * table.length) | 0],
+              pt.x + U.rand(-0.3, 0.3), pt.y + U.rand(-0.3, 0.3));
+            if (e) { e.state = 'chase'; e.hasSeen = true; e.lastSeenX = p.x; e.lastSeenY = p.y; }
+          }
+          this.totalEnemies += n;
+          UI.feed('増援出現', 'warn');
+          Snd.play('alert', { vol: 0.4 });
+        }
+      }
+
+      if (st.objective === 'capture') {
+        const hold = st.holdTime || 4;
+        let announced = false;
+        this.zones.forEach(z => {
+          z.t += dt;
+          if (z.done) return;
+          const inZone = U.dist2(p.x, p.y, z.x, z.y) < 1.9;
+          if (inZone) {
+            z.progress = Math.min(1, z.progress + dt / hold);
+            if (z.progress >= 1) {
+              z.done = true;
+              this.coins += 40;
+              this.addXp(30);
+              Snd.play('zone');
+              Haptics.tap('kill');
+              const left = this.zones.filter(q => !q.done).length;
+              UI.feed('拠点確保 ' + (this.zones.length - left) + '/' + this.zones.length, 'kill');
+              if (left) UI.bigMsg('POINT SECURED');
+              announced = true;
+            }
+          } else {
+            z.progress = Math.max(0, z.progress - dt * 0.25);   // 離れると少しずつ戻る
+          }
+        });
+        if (announced) this.syncHud(true);
+      }
+
+      if (st.objective === 'reach') {
+        const z = this.zones[0];
+        const needed = st.reachKills || 0;
+        const open = this.kills >= needed;
+        if (z) {
+          if (open && !z.open) {                 // 封鎖解除の瞬間を知らせる
+            z.open = true;
+            UI.bigMsg('EXIT OPEN');
+            UI.feed('脱出地点が解放された', 'kill');
+            Snd.play('zone');
+          }
+          z.locked = !open;
+          if (open && !z.done && U.dist2(p.x, p.y, z.x, z.y) < 1.6) {
+            z.done = true;
+            Snd.play('zone');
+          }
+        }
+      }
+    },
+
     checkObjective() {
       if (this.state !== 'playing') return;
       const st = this.stage;
@@ -1031,6 +1376,12 @@
         if (met) { this.stageClear(); return; }
       } else if (st.objective === 'count') {
         met = this.kills >= (st.target || 1);
+      } else if (st.objective === 'survive') {
+        met = this.surviveLeft <= 0;
+      } else if (st.objective === 'capture') {
+        met = this.zones.length > 0 && this.zones.every(z => z.done);
+      } else if (st.objective === 'reach') {
+        met = this.zones.length > 0 && this.zones[0].done;
       } else {
         met = this.enemies.length > 0 && this.enemies.every(e => e.state === 'dead');
       }
@@ -1044,6 +1395,13 @@
       const st = this.stage;
       if (st.objective === 'boss') return this.boss && this.boss.state !== 'dead' ? 1 : 0;
       if (st.objective === 'count') return Math.max(0, (st.target || 1) - this.kills);
+      if (st.objective === 'survive') return Math.ceil(this.surviveLeft);
+      if (st.objective === 'capture') return this.zones.filter(z => !z.done).length;
+      if (st.objective === 'reach') {
+        const need = Math.max(0, (st.reachKills || 0) - this.kills);
+        if (need > 0) return need;
+        return this.zones.some(z => z.done) ? 0 : 1;
+      }
       return this.enemies.filter(e => e.state !== 'dead').length;
     },
 
@@ -1056,14 +1414,23 @@
       const p = this.player;
       const acc = p.shots ? p.hits / p.shots : 0;
       const rank = DATA.computeRank(this.stage, this.time, acc, p.hp / p.maxHp);
+      const stars = { S: 3, A: 3, B: 2, C: 1, D: 1 }[rank] || 1;
       const bonus = Math.round(this.stage.reward * ({ S: 1.6, A: 1.35, B: 1.15, C: 1.0, D: 0.85 })[rank]);
       const total = this.coins + bonus;
-      const newWeapon = Save.clearStage(this.stage.id, rank, this.time, total);
+      // クリアボーナスの経験値。星が多いほど多く入る
+      const xpBonus = Math.round((40 + this.stage.reward * 0.35) * (0.8 + stars * 0.25));
+      this.addXp(xpBonus);
+      if (p.bestCombo > Save.data.bestCombo) { Save.data.bestCombo = p.bestCombo; }
+      const before = Save.levelInfo();
+      const newWeapon = Save.clearStage(this.stage.id, rank, this.time, total, stars);
       UI.showClear({
-        stage: this.stage, rank, time: this.time, kills: this.kills,
+        stage: this.stage, rank, stars, time: this.time, kills: this.kills,
+        headshots: p.headshots, bestCombo: p.bestCombo,
         acc, coins: this.coins, bonus, total, newWeapon,
+        xp: this.xpEarned, xpBonus, level: before,
         hasNext: !this.stage.custom && !!DATA.STAGES[this.stageIdx + 1] && !DATA.STAGES[this.stageIdx + 1].custom
       });
+      Haptics.tap('clear');
     },
 
     gameOver() {
@@ -1073,9 +1440,11 @@
       Input.setEnabled(false);
       Snd.stopBgm(); Snd.play('gameover');
       this.addShake(2.5);
+      Haptics.tap('over');
       UI.showOver({
         stage: this.stage, time: this.time, kills: this.kills,
-        remaining: this.remaining(), coins: this.coins
+        remaining: this.remaining(), coins: this.coins,
+        headshots: this.player.headshots, xp: this.xpEarned
       });
     },
 
@@ -1136,10 +1505,14 @@
       if (force || this.coins !== this._lastCoins) { UI.setCoins(this.coins); this._lastCoins = this.coins; }
       const sec = this.time | 0;
       if (force || sec !== this._lastSec) {
-        UI.setTimer(this.time);
+        UI.setTimer(this.stage.objective === 'survive' ? this.surviveLeft : this.time);
         UI.setObjective(this.stage, this.remaining(), this.totalEnemies);
         this._lastSec = sec;
       }
+      if (force) { UI.setXp(Save.levelInfo()); UI.setBuffs(p.buffs); }
+      if (this.stage.objective === 'capture') UI.setZones(this.zones);
+      UI.setBossBar(this.boss);
+      UI.setCharge(p.weapon.fireMode === 'charge' ? p.charge : -1);
     },
 
     /* frame render entry */

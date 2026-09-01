@@ -60,9 +60,31 @@ const PORT = 8931;
   await page.waitForTimeout(700); await shot('08-scope');
   await page.evaluate(() => { __game.Input.crouch = false; });
 
+  // 拠点確保ステージ
+  await page.evaluate(async () => {
+    const G = __game.Game; G.startStage(8);
+    G.player.x = G.zones[0].x + 0.4; G.player.y = G.zones[0].y + 0.4;
+    G.player.buffs = { power: 9, shield: 7 };
+    for (let i = 0; i < 90; i++) { G.update(1 / 60); G.player.hp = G.player.maxHp; await new Promise(r => setTimeout(r, 0)); }
+    __game.UI.setCombo(5, 1.4);
+  });
+  await page.waitForTimeout(300); await shot('13-capture');
+
+  // チャージ武器
+  await page.evaluate(async () => {
+    const G = __game.Game, S = __game.Save;
+    S.unlockWeapon('rl'); S.save(); G.startStage(7);
+    const i = G.player.weapons.findIndex(w => w.id === 'rl');
+    G.player.wIdx = i; G.player.switchT = 0;
+    __game.Input._btnFire = true;
+    for (let n = 0; n < 45; n++) { G.update(1 / 60); await new Promise(r => setTimeout(r, 0)); }
+    __game.Input._btnFire = false;
+  });
+  await page.waitForTimeout(200); await shot('14-charge');
+
   // boss arena
   await page.evaluate(async () => {
-    const G = __game.Game; G.startStage(5);
+    const G = __game.Game; G.startStage(10);
     const p = G.player, b = G.boss;
     p.x = b.x - 5; p.y = b.y; __game.aimAt(b);
     for (let i = 0; i < 60; i++) { G.update(1 / 60); await new Promise(r => setTimeout(r, 0)); }

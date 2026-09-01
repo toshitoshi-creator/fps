@@ -237,6 +237,11 @@
         if (!p) return;
         list.push({ kind: 'pickup', pk, p });
       });
+      (game.zones || []).forEach(z => {
+        const p = this.project(z.x, z.y);
+        if (!p) return;
+        list.push({ kind: 'zone', z, p });
+      });
       game.parts.forEach(pt => {
         if (!pt.alive) return;
         const p = this.project(pt.x, pt.y);
@@ -251,6 +256,7 @@
         if (it.kind === 'enemy') this._drawEnemy(it.e, it.p, game);
         else if (it.kind === 'proj') this._drawProj(it.pr, it.p);
         else if (it.kind === 'pickup') this._drawPickup(it.pk, it.p);
+        else if (it.kind === 'zone') this._drawZone(it.z, it.p, game);
         else this._drawParticle(it.pt, it.p);
       }
       x.globalAlpha = 1;
@@ -383,11 +389,53 @@
       x.translate(p.sx, yc);
       x.rotate(pk.t * 1.6);
       x.globalCompositeOperation = 'lighter';
-      x.fillStyle = pk.type === 'ammo' ? '#7fe3ff' : (pk.type === 'health' ? '#4dff9a' : '#ffd24a');
+      x.fillStyle = ({
+        ammo: '#7fe3ff', health: '#4dff9a', power: '#ff5f7a',
+        shield: '#8ab4ff', haste: '#ffd23f'
+      })[pk.type] || '#ffd24a';
       x.shadowColor = x.fillStyle; x.shadowBlur = s;
       x.beginPath();
       x.moveTo(0, -s); x.lineTo(s * .8, 0); x.lineTo(0, s); x.lineTo(-s * .8, 0);
       x.closePath(); x.fill();
+      x.restore();
+    },
+
+    /** 拠点・脱出地点。床の輪と光の柱で遠くからでも位置が分かるようにする */
+    _drawZone(z, p, game) {
+      const x = this.ctx, cam = this.cam;
+      if (this.zAt(p.sx) < p.depth) return;
+      if (p.depth < 0.9) return;              // 真上に立っている時は描かない
+      const lineH = p.lineH;
+      const yBase = cam.horizon + cam.eyeZ * lineH;
+      // 近づくほど巨大化して視界を塞ぐので、幅と濃さに上限を設ける
+      const w = Math.min(lineH * 1.5, this.W * 0.30);
+      const near = U.clamp((p.depth - 0.9) / 1.6, 0, 1);
+      const done = z.done;
+      const col = z.locked ? '#ff5f7a' : (z.kind === 'exit' ? '#4dff9a' : (done ? '#4dff9a' : '#ffd23f'));
+      const pulse = 0.55 + Math.sin((z.t || 0) * 4) * 0.22;
+
+      x.save();
+      // 光の柱
+      const top = yBase - lineH * 1.4;
+      const g2 = x.createLinearGradient(0, top, 0, yBase);
+      g2.addColorStop(0, 'rgba(0,0,0,0)');
+      g2.addColorStop(1, col);
+      x.globalAlpha = (done ? 0.22 : 0.16) * pulse * near;
+      x.fillStyle = g2;
+      x.fillRect(p.sx - w * 0.30, top, w * 0.60, yBase - top);
+      // 床の輪
+      x.globalAlpha = (done ? 0.85 : 0.7) * (0.35 + near * 0.65);
+      x.strokeStyle = col;
+      x.lineWidth = Math.max(2, lineH * 0.035);
+      x.beginPath(); x.ellipse(p.sx, yBase, w * 0.5, w * 0.16, 0, 0, 7); x.stroke();
+      // 確保の進捗
+      if (z.kind === 'capture' && !done && z.progress > 0) {
+        x.strokeStyle = '#4dff9a';
+        x.lineWidth = Math.max(3, lineH * 0.055);
+        x.beginPath();
+        x.ellipse(p.sx, yBase, w * 0.5, w * 0.16, 0, -Math.PI / 2, -Math.PI / 2 + z.progress * U.TAU);
+        x.stroke();
+      }
       x.restore();
     },
 
@@ -432,6 +480,41 @@
         x.restore();
       });
       x.globalAlpha = 1;
+    },
+
+    /** 狙撃兵などの攻撃予兆。プレイヤーへ伸びる赤い線で「今狙われている」ことを伝える */
+    renderLasers(game) {
+      const x = this.ctx, W = this.W, H = this.H;
+      let any = false;
+      for (let i = 0; i < game.enemies.length; i++) {
+        const e = game.enemies[i];
+        if (e.state === 'dead' || e.windupT <= 0 || !e.def.laser) continue;
+        const p = this.project(e.x, e.y);
+        if (!p || this.zAt(p.sx) < p.depth) continue;
+        const lineH = p.lineH;
+        const y0 = this.cam.horizon + (this.cam.eyeZ - e.def.height * 0.62) * lineH;
+        const k = 1 - U.clamp(e.windupT / Math.max(0.01, e.windupMax), 0, 1);
+        any = true;
+        x.save();
+        x.globalCompositeOperation = 'lighter';
+        x.globalAlpha = 0.35 + k * 0.5;
+        x.strokeStyle = '#ff3b46';
+        x.lineWidth = Math.max(1, 1.6 + k * 2.2);
+        x.beginPath();
+        x.moveTo(p.sx, y0);
+        x.lineTo(W / 2, H / 2);
+        x.stroke();
+        x.restore();
+      }
+      if (any) {
+        // 中央に着弾予告のリング
+        x.save();
+        x.globalAlpha = 0.55;
+        x.strokeStyle = '#ff3b46';
+        x.lineWidth = 2;
+        x.beginPath(); x.arc(W / 2, H / 2, Math.min(W, H) * 0.045, 0, 7); x.stroke();
+        x.restore();
+      }
     },
 
     renderDamageNumbers(game) {
@@ -552,6 +635,7 @@
       this.updateCamera(p, game.shakeYaw, game.shakePitch, game.curZoom);
       this.renderWorld(game);
       this.renderSprites(game);
+      this.renderLasers(game);
       this.renderTracers(game);
       this.renderDamageNumbers(game);
       this.renderWeapon(game);

@@ -3,6 +3,11 @@
   'use strict';
   const KEY = 'steel_protocol_save_v1';
   const DEFAULT_SENS = 200;      // 画面幅いっぱいの1スワイプでおよそ115度振り向ける
+  const MAX_LEVEL = 30;
+  // レベル L → L+1 に必要な経験値
+  function xpForLevel(l) { return Math.round(80 * Math.pow(l, 1.42)); }
+  // エイムアシストの強さ（当たり判定の横幅倍率）
+  const AIM_LEVELS = { OFF: 1.0, LOW: 1.15, MED: 1.32, HIGH: 1.55 };
 
   function defaultSave() {
     const wu = {};
@@ -10,14 +15,20 @@
     return {
       v: 1,
       coins: 0,
-      cleared: [],                 // stage ids cleared
-      ranks: {},                   // stageId -> rank
-      bestTime: {},                // stageId -> seconds
+      cleared: [],                 // クリア済みステージ id
+      ranks: {},                   // stageId -> ランク (S/A/B/C/D)
+      stars: {},                   // stageId -> 星の数 (1..3)
+      bestTime: {},                // stageId -> 秒
+      level: 1, xp: 0, totalXp: 0,
+      headshots: 0, bestCombo: 0,
       unlocked: ['ar'],            // weapon ids owned
       equipped: 'ar',
       wUpg: wu,                    // per-weapon upgrade levels
       pUpg: { hp: 0, spd: 0, amo: 0, arm: 0, crt: 0 },
-      settings: { sens: DEFAULT_SENS, sfx: 1, bgm: 1, shake: 1, lefty: 0, quality: 'AUTO', aim: 1, skin: 'POP' },
+      settings: {
+        sens: DEFAULT_SENS, sfx: 1, bgm: 1, shake: 1, lefty: 0,
+        quality: 'AUTO', aim: 'MED', vibrate: 1, skin: 'POP'
+      },
       setRev: 1,
       totalKills: 0, totalPlays: 0, seenTutorial: 0
     };
@@ -44,6 +55,18 @@
         this.data.wUpg[w.id] = Object.assign({ dmg: 0, mag: 0, rld: 0, ctl: 0 }, this.data.wUpg[w.id] || {});
       });
       if (!Array.isArray(this.data.cleared)) this.data.cleared = [];
+      if (!this.data.stars || typeof this.data.stars !== 'object') this.data.stars = {};
+      this.data.level = U.clamp(this.data.level | 0, 1, MAX_LEVEL) || 1;
+      this.data.xp = Math.max(0, this.data.xp | 0);
+      this.data.totalXp = Math.max(0, this.data.totalXp | 0);
+      this.data.headshots = Math.max(0, this.data.headshots | 0);
+      this.data.bestCombo = Math.max(0, this.data.bestCombo | 0);
+      // エイムアシストは旧仕様(0/1)から4段階へ移行
+      const a = this.data.settings.aim;
+      if (a === 1 || a === true) this.data.settings.aim = 'MED';
+      else if (a === 0 || a === false) this.data.settings.aim = 'OFF';
+      if (!AIM_LEVELS[this.data.settings.aim]) this.data.settings.aim = 'MED';
+      if (this.data.settings.vibrate !== 0) this.data.settings.vibrate = 1;
       if (!Array.isArray(this.data.unlocked) || !this.data.unlocked.length) this.data.unlocked = ['ar'];
       if (this.data.unlocked.indexOf('ar') < 0) this.data.unlocked.push('ar');
       if (this.data.unlocked.indexOf(this.data.equipped) < 0) this.data.equipped = 'ar';
@@ -112,12 +135,16 @@
       if (!this.spend(cost)) return 'poor';
       this.data.pUpg[key] = lv + 1; this.save(); return 'ok';
     },
-    clearStage(id, rank, timeSec, coins) {
+    clearStage(id, rank, timeSec, coins, stars) {
       // スキャンマップのクリアは本編の進行度には数えない（コインと記録は入る）
       if (id !== DATA.CUSTOM_ID && this.data.cleared.indexOf(id) < 0) this.data.cleared.push(id);
       const order = { D: 0, C: 1, B: 2, A: 3, S: 4 };
       const prev = this.data.ranks[id];
       if (!prev || order[rank] > order[prev]) this.data.ranks[id] = rank;
+      if (stars) {
+        const prevS = this.data.stars[id] || 0;
+        if (stars > prevS) this.data.stars[id] = stars;
+      }
       const bt = this.data.bestTime[id];
       if (!bt || timeSec < bt) this.data.bestTime[id] = Math.round(timeSec * 10) / 10;
       this.data.coins += (coins | 0);
@@ -131,15 +158,56 @@
       return newWeapon;
     },
 
+    /* --- レベル / 経験値 --- */
+    MAX_LEVEL,
+    xpForLevel,
+    AIM_LEVELS,
+    aimAssist() { return AIM_LEVELS[this.data.settings.aim] || 1.32; },
+    levelInfo() {
+      const lv = this.data.level;
+      const need = lv >= MAX_LEVEL ? 0 : xpForLevel(lv);
+      return { level: lv, xp: this.data.xp, need, ratio: need ? U.clamp(this.data.xp / need, 0, 1) : 1, max: lv >= MAX_LEVEL };
+    },
+    /** 経験値を加算し、上がったレベル数を返す */
+    addXp(n) {
+      n = Math.max(0, n | 0);
+      if (!n) return 0;
+      this.data.totalXp += n;
+      if (this.data.level >= MAX_LEVEL) { this.save(); return 0; }
+      this.data.xp += n;
+      let gained = 0;
+      while (this.data.level < MAX_LEVEL && this.data.xp >= xpForLevel(this.data.level)) {
+        this.data.xp -= xpForLevel(this.data.level);
+        this.data.level++;
+        gained++;
+      }
+      if (this.data.level >= MAX_LEVEL) this.data.xp = 0;
+      this.save();
+      return gained;
+    },
+    /** レベルアップで得られる恒常ボーナス */
+    levelBonus() {
+      const n = this.data.level - 1;
+      return {
+        hp: n * 7,
+        dmg: 1 + n * 0.025,
+        speed: 1 + n * 0.012,
+        reload: Math.max(0.65, 1 - n * 0.01)
+      };
+    },
+
     /* --- derived player/weapon stats --- */
     playerStats() {
       const p = this.data.pUpg;
+      const lb = this.levelBonus();
       return {
-        maxHp: 115 + p.hp * 22,
-        speed: 3.05 * (1 + p.spd * 0.07),
+        maxHp: 115 + p.hp * 22 + lb.hp,
+        speed: 3.05 * (1 + p.spd * 0.07) * lb.speed,
         ammoMul: 1 + p.amo * 0.15,
         armor: p.arm * 0.06,
-        critBonus: p.crt * 0.15
+        critBonus: p.crt * 0.15,
+        levelDmg: lb.dmg,
+        levelReload: lb.reload
       };
     },
     weaponStats(wid) {
@@ -151,13 +219,13 @@
         id: wid,
         name: base.name,
         cat: base.cat,
-        damage: base.damage * (1 + u.dmg * 0.14),
+        damage: base.damage * (1 + u.dmg * 0.14) * ps.levelDmg,
         pellets: base.pellets,
         rpm: base.rpm,
         mag: Math.round(base.mag * (1 + u.mag * 0.20)),
         reserveMax: Math.round(base.reserveMax * ps.ammoMul),
         startReserve: Math.round(base.reserve * ps.ammoMul),
-        reload: base.reload * (1 - u.rld * 0.09),
+        reload: base.reload * (1 - u.rld * 0.09) * ps.levelReload,
         spread: base.spread * (1 - u.ctl * 0.12),
         moveSpread: base.moveSpread * (1 - u.ctl * 0.12),
         recoil: base.recoil * (1 - u.ctl * 0.12),
@@ -165,6 +233,14 @@
         range: base.range,
         falloff: base.falloff,
         auto: base.auto,
+        fireMode: base.fireMode,
+        burstCount: base.burstCount || 3,
+        burstGap: base.burstGap || 0.075,
+        chargeTime: base.chargeTime || 0,
+        chargeBonus: base.chargeBonus || 1,
+        projSpeed: base.projSpeed || 0,
+        splash: base.splash || 0,
+        splashMin: base.splashMin || 0.3,
         zoom: base.zoom,
         sfx: base.sfx,
         shake: base.shake,

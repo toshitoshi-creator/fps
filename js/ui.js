@@ -32,6 +32,13 @@
       this.lowVig = U.$id('lowhpVignette'); this.flashEl = U.$id('flash');
       this.dirEl = U.$id('dirIndicators'); this.slotsEl = U.$id('wpnSlots');
       this.compass = U.$id('compass'); this.cmpDist = U.$id('cmpDist');
+      this.lvText = U.$id('lvText'); this.xpFill = U.$id('xpFill');
+      this.bossBar = U.$id('bossBar'); this.bossFill = U.$id('bossFill');
+      this.bossName = U.$id('bossName'); this.bossPhase = U.$id('bossPhase');
+      this.zonePips = U.$id('zonePips'); this.buffRow = U.$id('buffRow');
+      this.comboBox = U.$id('comboBox'); this.comboNum = U.$id('comboNum');
+      this.comboMul = U.$id('comboMul');
+      this.chargeRing = U.$id('chargeRing'); this.crFill = U.$id('crFill');
 
       this.bindNav();
       this.bindSettings();
@@ -90,8 +97,9 @@
     /* ============================= TITLE ============================= */
     refreshTitle() {
       const d = Save.data;
+      const lv = Save.levelInfo();
       U.$id('titleProgress').textContent =
-        'STAGE ' + Save.maxStage() + ' / ' + DATA.STAGES.length +
+        'LV ' + lv.level + ' · STAGE ' + Save.maxStage() + ' / ' + DATA.builtinStages().length +
         ' · COIN ' + d.coins + ' · KILLS ' + d.totalKills;
       U.all('.coinNum').forEach(e => e.textContent = d.coins);
     },
@@ -129,7 +137,8 @@
           '<div class="sc-name">' + st.name + '</div>' +
           '<div class="sc-meta">' + st.jp + (st.boss ? ' · BOSS' : '') + '<br>' +
           (unlocked ? (bt ? 'BEST ' + U.fmtTime(bt) : 'NO RECORD') : '前のステージをクリアしてください') + '</div>' +
-          (rank ? '<div class="sc-rank">' + rank + '</div>' : '');
+          (rank ? '<div class="sc-rank">' + rank + '</div>' : '') +
+          (d.stars[st.id] ? '<div class="sc-stars">' + this.stars(d.stars[st.id]) + '</div>' : '');
         if (unlocked) b.addEventListener('click', () => { Snd.play('btn_big'); this.showBrief(st.id); });
         else b.addEventListener('click', () => Snd.play('dry'));
         wrap.appendChild(b);
@@ -278,7 +287,15 @@
       toggle('setBgm', 'bgm', v => Snd.setBgm(v));
       toggle('setShake', 'shake');
       toggle('setLefty', 'lefty', v => Input.setLefty(v));
-      toggle('setAim', 'aim');
+      toggle('setVib', 'vibrate', v => { Haptics.setEnabled(v); if (v) Haptics.tap('ui'); });
+      U.$id('setAim').addEventListener('click', () => {
+        Snd.play('btn');
+        const order = ['OFF', 'LOW', 'MED', 'HIGH'];
+        const i = order.indexOf(Save.data.settings.aim);
+        Save.data.settings.aim = order[(i + 1) % order.length];
+        Save.save();
+        this.refreshSettings();
+      });
       U.$id('setSkin').addEventListener('click', () => {
         Snd.play('btn');
         const cur = Save.data.settings.skin === 'MIL' ? 'MIL' : 'POP';
@@ -324,7 +341,15 @@
         e.textContent = on ? 'ON' : 'OFF';
       };
       set('setSfx', s.sfx); set('setBgm', s.bgm); set('setShake', s.shake);
-      set('setLefty', s.lefty); set('setAim', s.aim);
+      set('setLefty', s.lefty); set('setVib', s.vibrate);
+      const aimEl = U.$id('setAim');
+      aimEl.textContent = s.aim;
+      aimEl.setAttribute('data-on', s.aim === 'OFF' ? '0' : '1');
+      if (!Haptics.supported) {
+        const vb = U.$id('setVib');
+        vb.textContent = '非対応';
+        vb.setAttribute('data-on', '0');
+      }
       U.$id('setQuality').textContent = s.quality;
       U.$id('setSkin').textContent = Skin.get(s.skin).label;
       U.$id('setWipe').textContent = this._wipeArm ? '本当に削除？' : 'DELETE';
@@ -333,6 +358,7 @@
     applySettings() {
       const s = Save.data.settings;
       Skin.apply(s.skin);
+      Haptics.setEnabled(s.vibrate);
       Input.sensitivity = s.sens;
       Input.setLefty(s.lefty);
       Snd.setSfx(s.sfx); Snd.setBgm(s.bgm);
@@ -349,6 +375,12 @@
       this.lowVig.classList.add('hidden');
       this.dirEl.innerHTML = '';
       this.setCompass(null);
+      this.setCombo(0, 1);
+      this._buffKey = null; this.setBuffs({});
+      this.setZones(game.zones);
+      this.setBossBar(null);
+      this.setCharge(-1);
+      this.setXp(Save.levelInfo());
       this.stageTag.textContent = (game.stage.custom ? 'CUSTOM' : 'STAGE ' + game.stage.id) + ' · ' + game.stage.name;
       this.bigMsg(game.stage.custom ? game.stage.name : 'STAGE ' + game.stage.id);
     },
@@ -371,24 +403,52 @@
     setCoins(n) { this.coinText.textContent = n; },
     setTimer(t) { this.timerText.textContent = U.fmtTime(t); },
     setObjective(stage, remaining, total) {
-      if (stage.objective === 'boss') {
-        this.objText.textContent = 'TITAN-01 を撃破せよ';
-        const b = Game.boss;
-        this.objProgress.textContent = b
-          ? 'BOSS HP ' + Math.max(0, Math.ceil(b.hp)) + ' / ' + b.maxHp
-          : '';
-      } else if (stage.objective === 'count') {
-        this.objText.textContent = '敵を ' + stage.target + ' 体撃破せよ';
-        this.objProgress.textContent = Math.min(Game.kills, stage.target) + ' / ' + stage.target;
-      } else {
-        this.objText.textContent = '敵を全滅させろ';
-        this.objProgress.textContent = (total - remaining) + ' / ' + total;
+      switch (stage.objective) {
+        case 'boss':
+          this.objText.textContent = 'TITAN-01 を撃破せよ';
+          this.objProgress.textContent = '';
+          break;
+        case 'count':
+          this.objText.textContent = '敵を ' + stage.target + ' 体撃破せよ';
+          this.objProgress.textContent = Math.min(Game.kills, stage.target) + ' / ' + stage.target;
+          break;
+        case 'survive':
+          this.objText.textContent = '生き延びろ';
+          this.objProgress.textContent = '残り ' + Math.ceil(Game.surviveLeft) + ' 秒';
+          break;
+        case 'capture': {
+          const done = Game.zones.filter(z => z.done).length;
+          this.objText.textContent = '拠点を確保せよ';
+          this.objProgress.textContent = done + ' / ' + Game.zones.length;
+          break;
+        }
+        case 'reach': {
+          const need = stage.reachKills || 0;
+          if (need && Game.kills < need) {
+            this.objText.textContent = '封鎖を解いて脱出せよ';
+            this.objProgress.textContent = '撃破 ' + Game.kills + ' / ' + need;
+          } else {
+            this.objText.textContent = '脱出地点へ向かえ';
+            this.objProgress.textContent = remaining ? 'EXIT 解放中' : '到達';
+          }
+          break;
+        }
+        default:
+          this.objText.textContent = '敵を全滅させろ';
+          this.objProgress.textContent = (total - remaining) + ' / ' + total;
       }
     },
     objectiveLabel(stage) {
-      if (stage.objective === 'boss') return 'ボス「TITAN-01」を撃破';
-      if (stage.objective === 'count') return '敵を ' + stage.target + ' 体撃破';
-      return '敵を全滅させる';
+      switch (stage.objective) {
+        case 'boss': return 'ボス「TITAN-01」を撃破';
+        case 'count': return '敵を ' + stage.target + ' 体撃破';
+        case 'survive': return stage.duration + '秒間 生き延びる';
+        case 'capture': return '3つの拠点を確保';
+        case 'reach': return stage.reachKills
+          ? '敵を ' + stage.reachKills + ' 体撃破して脱出地点へ到達'
+          : '脱出地点へ到達';
+        default: return '敵を全滅させる';
+      }
     },
     setReload(p) {
       if (p == null) { this.reloadBar.classList.add('hidden'); return; }
@@ -457,6 +517,72 @@
       this.tutEl.classList.remove('hidden');
     },
     setCrosshairEnemy(on) { this.crosshair.classList.toggle('enemy', !!on); },
+
+    setXp(info) {
+      if (!info) return;
+      this.lvText.textContent = 'LV ' + info.level + (info.max ? ' MAX' : '');
+      this.xpFill.style.width = (info.ratio * 100) + '%';
+    },
+
+    setCombo(n, mul) {
+      const show = n >= 2;
+      this.comboBox.classList.toggle('hidden', !show);
+      if (!show) return;
+      this.comboNum.textContent = n;
+      this.comboMul.textContent = 'x' + mul.toFixed(1);
+      this.comboBox.classList.remove('bump');
+      void this.comboBox.offsetWidth;
+      this.comboBox.classList.add('bump');
+    },
+
+    setBuffs(buffs) {
+      const keys = Object.keys(buffs || {});
+      if (keys.join(',') === this._buffKey) {
+        keys.forEach(k => {
+          const el = this.buffRow.querySelector('[data-b="' + k + '"] b');
+          if (el) el.textContent = Math.ceil(buffs[k]);
+        });
+        return;
+      }
+      this._buffKey = keys.join(',');
+      const NAME = { power: '攻撃UP', shield: 'シールド', haste: '速度UP' };
+      this.buffRow.innerHTML = keys.map(k =>
+        '<span class="buff ' + k + '" data-b="' + k + '">' + (NAME[k] || k) +
+        ' <b>' + Math.ceil(buffs[k]) + '</b></span>').join('');
+    },
+
+    setZones(zones) {
+      if (!zones || !zones.length) { this.zonePips.classList.add('hidden'); return; }
+      this.zonePips.classList.remove('hidden');
+      if (this.zonePips.children.length !== zones.length) {
+        this.zonePips.innerHTML = zones.map(() => '<span><i></i></span>').join('');
+      }
+      zones.forEach((z, i) => {
+        const el = this.zonePips.children[i];
+        el.classList.toggle('done', !!z.done);
+        el.firstChild.style.width = (z.progress * 100) + '%';
+      });
+    },
+
+    setBossBar(boss) {
+      const show = !!(boss && boss.state !== 'dead');
+      this.bossBar.classList.toggle('hidden', !show);
+      if (!show) return;
+      this.bossName.textContent = boss.def.name;
+      this.bossPhase.textContent = 'PHASE ' + boss.phase;
+      this.bossFill.style.width = U.clamp(boss.hp / boss.maxHp, 0, 1) * 100 + '%';
+    },
+
+    setCharge(v) {
+      // 溜めていない間はリングを出さない（照準まわりを散らかさない）
+      if (v < 0.02) { this.chargeRing.classList.add('hidden'); this._chargeFull = false; return; }
+      this.chargeRing.classList.remove('hidden');
+      const C = 119.4;
+      this.crFill.style.strokeDashoffset = (C * (1 - U.clamp(v, 0, 1))).toFixed(1);
+      this.chargeRing.classList.toggle('full', v >= 0.999);
+      if (v >= 0.999 && !this._chargeFull) { this._chargeFull = true; Snd.play('charge_full'); }
+      if (v < 0.999) this._chargeFull = false;
+    },
     setCompass(relAng, dist) {
       if (relAng == null) { this.compass.classList.add('hidden'); return; }
       this.compass.classList.remove('hidden');
@@ -466,17 +592,29 @@
     },
 
     /* ============================= RESULT SCREENS ============================= */
+    stars(n) {
+      let s = '';
+      for (let i = 1; i <= 3; i++) s += '<span class="' + (i <= n ? 'on' : '') + '">★</span>';
+      return '<div class="stars">' + s + '</div>';
+    },
+
     showClear(r) {
       const acc = Math.round(r.acc * 100);
       U.$id('rankBadge').textContent = r.rank;
       U.$id('rankBadge').className = 'rank-badge r' + r.rank;
+      U.$id('clearStars').innerHTML = this.stars(r.stars);
+      const lv = Save.levelInfo();
       U.$id('clearStats').innerHTML =
         row('撃破数', r.kills + ' 体') +
+        row('ヘッドショット', r.headshots + ' 回') +
+        row('最大コンボ', r.bestCombo + ' 連続') +
         row('クリア時間', U.fmtTime(r.time)) +
         row('命中率', acc + ' %') +
         row('評価', '<b>' + r.rank + '</b>');
       U.$id('rewardLine').innerHTML =
-        '獲得コイン <b>' + r.coins + '</b> + クリアボーナス <b>' + r.bonus + '</b> = <b>' + r.total + '◆</b>' +
+        '獲得コイン <b>' + r.coins + '</b> + ボーナス <b>' + r.bonus + '</b> = <b>' + r.total + '◆</b>' +
+        '<br><span style="color:#8ab4ff">経験値 +' + r.xp + '　LV ' + lv.level +
+        (lv.max ? ' (MAX)' : '  次まで ' + Math.max(0, lv.need - lv.xp)) + '</span>' +
         (r.newWeapon ? '<br><span style="color:#7fe3ff">新武器解放: ' + r.newWeapon.name + '</span>' : '');
       U.show(U.$id('btnNextStage'), r.hasNext);
       this.showScreen('clear');
@@ -487,7 +625,8 @@
       U.$id('overStats').innerHTML =
         row('到達ステージ', r.stage.custom ? r.stage.name : 'STAGE ' + r.stage.id) +
         row('撃破数', r.kills + ' 体') +
-        row('残存敵', r.remaining + ' 体') +
+        row('ヘッドショット', r.headshots + ' 回') +
+        row('獲得経験値', r.xp + ' XP') +
         row('生存時間', U.fmtTime(r.time));
       this.showScreen('over');
     }

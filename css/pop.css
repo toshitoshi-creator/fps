@@ -283,3 +283,36 @@ body.pop .act-btn .ico{font-size:20px;}
   body.pop .dlg-btns .mbtn{box-shadow:0 4px 0 rgba(27,34,51,.45);}
   body.pop .rank-badge{width:40px;height:40px;line-height:36px;font-size:22px;}
 }
+
+/* ---------- 追加HUD（レベル・ボス・拠点・バフ・コンボ・チャージ） ---------- */
+body.pop .lv{color:#f08a1f;font-weight:900;}
+body.pop .xp-bar{border:2px solid var(--ink);border-radius:999px;background:#e6ebf2;height:6px;}
+body.pop .xp-bar i{background:linear-gradient(90deg,#ffd23f,#ff9f4a);border-radius:999px;}
+body.pop .boss-bar{background:#fff;border:3px solid var(--ink);border-radius:999px;padding:3px 10px 5px;
+  box-shadow:0 3px 0 rgba(27,34,51,.35);margin-top:5px;}
+body.pop .boss-name{color:var(--ink);font-weight:900;}
+body.pop .boss-phase{color:#ff4fa8;}
+body.pop .boss-track{border:2px solid var(--ink);border-radius:999px;background:#e6ebf2;height:8px;}
+body.pop .boss-track i{background:linear-gradient(90deg,#ff3b5c,#ff8fa8);border-radius:999px;}
+body.pop .zone-pips span{border:2px solid var(--ink);border-radius:999px;background:#e6ebf2;height:7px;}
+body.pop .zone-pips span i{background:#ffd23f;}
+body.pop .zone-pips span.done i{background:#2fd98a;}
+body.pop .buff{border:3px solid var(--ink);border-radius:999px;background:#fff;color:var(--ink);
+  font-weight:900;box-shadow:0 3px 0 rgba(27,34,51,.3);}
+body.pop .buff.power{background:#ffd0d8;}
+body.pop .buff.shield{background:#d4e2ff;}
+body.pop .buff.haste{background:#fff0c2;}
+body.pop .combo span{color:#fff;-webkit-text-stroke:6px var(--ink);paint-order:stroke fill;}
+body.pop .combo small{color:#fff;-webkit-text-stroke:3px var(--ink);paint-order:stroke fill;}
+body.pop .combo em{color:#ffd23f;-webkit-text-stroke:4px var(--ink);paint-order:stroke fill;}
+body.pop .cr-bg{stroke:rgba(27,34,51,.6);stroke-width:5;}
+body.pop .cr-fill{stroke:#ffd23f;stroke-width:5;}
+body.pop .charge-ring.full .cr-fill{stroke:#fff;}
+body.pop .stars span{color:rgba(27,34,51,.18);}
+body.pop .stars span.on{color:#ffd23f;text-shadow:0 2px 0 var(--ink);}
+body.pop .hud-stats{top:calc(76px + var(--safe-t));}
+body.pop .buff-row{top:calc(112px + var(--safe-t));}
+@media (max-height:400px){
+  body.pop .hud-stats{top:calc(70px + var(--safe-t));}
+  body.pop .buff-row{top:calc(104px + var(--safe-t));}
+}

@@ -33,12 +33,21 @@
             <span id="hpText" class="hp-text">100</span>
           </div>
           <div class="hp-bar"><div id="hpFill" class="hp-fill"></div><div id="hpLag" class="hp-lag"></div></div>
+          <div class="xp-row">
+            <span id="lvText" class="lv">LV 1</span>
+            <span class="xp-bar"><i id="xpFill"></i></span>
+          </div>
         </div>
       </div>
       <div class="hud-center-top">
         <div id="stageTag" class="stage-tag">STAGE 1</div>
         <div id="objText" class="obj-text">敵を全滅させろ</div>
         <div id="objProgress" class="obj-progress">0 / 3</div>
+        <div id="zonePips" class="zone-pips hidden"></div>
+        <div id="bossBar" class="boss-bar hidden">
+          <div class="boss-name"><span id="bossName">TITAN-01</span><span id="bossPhase" class="boss-phase">PHASE 1</span></div>
+          <div class="boss-track"><i id="bossFill"></i></div>
+        </div>
       </div>
       <div class="hud-right-top">
         <div id="timerText" class="timer">00:00</div>
@@ -58,6 +67,15 @@
 
     <!-- off-screen enemy compass -->
     <div id="compass" class="compass hidden"><div class="cmp-arrow"></div><span id="cmpDist">0m</span></div>
+
+    <!-- buffs -->
+    <div id="buffRow" class="buff-row"></div>
+
+    <!-- combo -->
+    <div id="comboBox" class="combo hidden"><span id="comboNum">2</span><small>COMBO</small><em id="comboMul">x1.1</em></div>
+
+    <!-- charge ring -->
+    <div id="chargeRing" class="charge-ring hidden"><svg viewBox="0 0 44 44"><circle class="cr-bg" cx="22" cy="22" r="19"/><circle id="crFill" class="cr-fill" cx="22" cy="22" r="19"/></svg></div>
 
     <!-- kill / event feed -->
     <div id="feed" class="feed"></div>
@@ -164,7 +182,8 @@
         <div class="set-row"><label>画面揺れ</label><button id="setShake" class="toggle" data-on="1">ON</button></div>
         <div class="set-row"><label>左右反転 (左利き)</label><button id="setLefty" class="toggle" data-on="0">OFF</button></div>
         <div class="set-row"><label>描画品質</label><button id="setQuality" class="toggle wide-toggle">AUTO</button></div>
-        <div class="set-row"><label>オートエイム補正</label><button id="setAim" class="toggle" data-on="1">ON</button></div>
+        <div class="set-row"><label>エイムアシスト</label><button id="setAim" class="toggle wide-toggle">MED</button></div>
+        <div class="set-row"><label>振動 (VIBRATION)</label><button id="setVib" class="toggle" data-on="1">ON</button></div>
         <div class="set-row danger"><label>セーブデータ削除</label><button id="setWipe" class="toggle danger-btn">DELETE</button></div>
       </div>
       <div class="hint">※ タップで切替。設定は自動保存されます。</div>
@@ -201,6 +220,7 @@
   <div id="clearScreen" class="screen overlay hidden">
     <div class="dialog clear">
       <div id="rankBadge" class="rank-badge">S</div>
+      <div id="clearStars"></div>
       <h2 class="clear-title">STAGE CLEAR</h2>
       <div id="clearStats" class="result-stats"></div>
       <div id="rewardLine" class="reward-line"></div>
@@ -240,6 +260,7 @@
 
 <script src="js/util.js"></script>
 <script src="js/skins.js"></script>
+<script src="js/haptics.js"></script>
 <script src="js/audio.js"></script>
 <script src="js/data.js"></script>
 <script src="js/save.js"></script>

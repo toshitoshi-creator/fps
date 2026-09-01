@@ -78,6 +78,34 @@
             this._tone('sawtooth', 180, 42, 0.34, 0.24 * vol);
             this._tone('sine', 900, 260, 0.25, 0.07 * vol, null, 0.03);
             break;
+          case 'shot_rocket':
+            this._noise(0.36, 0.5 * vol, 'lowpass', 1800, 160);
+            this._tone('sawtooth', 150, 44, 0.30, 0.20 * vol);
+            this._tone('square', 420, 90, 0.16, 0.10 * vol);
+            break;
+          case 'explosion':
+            this._noise(0.75, 0.62 * vol, 'lowpass', 1200, 60);
+            this._tone('sine', 110, 28, 0.60, 0.26 * vol);
+            this._tone('sawtooth', 70, 22, 0.85, 0.18 * vol);
+            break;
+          case 'charge':
+            this._tone('sine', 220, 900, 0.55, 0.06 * vol);
+            break;
+          case 'charge_full':
+            this._tone('square', 1200, 1600, 0.10, 0.09 * vol);
+            break;
+          case 'levelup_big':
+            [523, 659, 784, 1046, 1318, 1568].forEach((f, i) =>
+              this._tone('triangle', f, f, 0.28, 0.12 * vol, null, i * 0.075));
+            break;
+          case 'zone':
+            this._tone('square', 640, 900, 0.10, 0.07 * vol);
+            this._tone('square', 900, 1200, 0.12, 0.05 * vol, null, 0.09);
+            break;
+          case 'warn':
+            this._tone('square', 880, 660, 0.14, 0.08 * vol);
+            this._tone('square', 660, 880, 0.14, 0.06 * vol, null, 0.14);
+            break;
           case 'dry':
             this._tone('square', 1500, 700, 0.035, 0.08 * vol);
             break;
