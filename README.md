@@ -1,8 +1,15 @@
-# STEEL PROTOCOL
+# STEEL PROTOCOL / LAST ISLAND
 
 スマートフォンのブラウザでそのまま遊べる、横画面・タッチ操作の本格FPS。
 外部ライブラリ・アセットは一切なし（HTML + CSS + Vanilla JS のみ、描画はレイキャスティング、
 効果音とBGMは WebAudio によるプロシージャル生成）。
+
+収録モードは2つ。タイトル画面から相互に行き来できます。
+
+| モード | 入口 | 内容 |
+|---|---|---|
+| **STEEL PROTOCOL** | `index.html` | 全10ステージのキャンペーン。目標6タイプ・武器6種・敵6種・コイン強化 |
+| **LAST ISLAND** | `br/index.html` | バトルロイヤル。1人 + Bot15体、96×96の島、輸送機→降下→漁り→安全地帯→最後の1人 |
 
 ## 遊び方
 
@@ -121,6 +128,62 @@ POPを既定にしているのは、将来スキャンした実在の空間で�
 - 被弾直後の短時間は被ダメージが軽減され、弾が重なっても即死しない
 - 拠点確保中は足を止めることを強制されるため、その間だけ被ダメージを軽減
 
+## LAST ISLAND（バトルロイヤル）
+
+`br/index.html`。1試合 = 自分1人 + Bot 15体（設定で 5〜29 体）。
+
+### 流れ
+
+輸送機 → 降下地点をマップでタップ → **DROP** → 自由落下 → 高度26mで自動パラシュート →
+着地 → 建物を漁って武装 → Bot と交戦 → 安全地帯が6段階で縮小 → 最後の1人で **VICTORY**。
+リザルトで XP とコインが入り、レベル（最大50）とデイリーミッションが進みます。
+
+### 島
+
+96×96 の島に 8つのランドマーク（CENTRAL CITY / MILITARY BASE / INDUSTRIAL / HARBOR /
+VILLAGE / FOREST / ROCK RIDGE / LAKE）。建物は必ず入口が開くように生成し、
+生成後に到達可能性を検査して、たどり着けない地形と宝箱は取り除きます。
+ルートの中身と品質はエリアごとに変わり、MILITARY BASE が最も良い装備が出ます。
+
+### 武器とアイテム
+
+| 種別 | 内容 |
+|---|---|
+| 武器 | 11種（PISTOL / SMG×2 / AR×3 / SHOTGUN×2 / LMG / DMR / SNIPER）2丁持ち |
+| 射撃 | フルオート・セミオート・3点バースト。SNIPER と DMR は弾速のある実弾 |
+| 弾薬 | ライト / ミディアム / ヘビー / シェル |
+| 防具 | アーマー Lv1〜3（ダメージの55%を肩代わり）、ヘルメット Lv1〜3（頭部被弾を20/35/50%軽減） |
+| 消耗品 | 包帯・メドキット・エナジー・フラググレネード |
+
+### 操作（追加ぶん）
+
+| 操作 | 方法 |
+|---|---|
+| ADS | ADS ボタン（押している間）。スコープ武器は覗き穴表示になります |
+| 伏せ | PRONE ボタン（拡散が最小、移動は遅い） |
+| 回復 | HEAL ボタン（状況に応じて包帯／メドキットを自動で選択） |
+| 投擲 | FRAG ボタン |
+| 持ち物 | BAG ボタン（武器の持ち替え・アイテムの使用） |
+| 全体マップ | ミニマップ右下の MAP ボタン（タップでマーカー設置） |
+
+ADS感度（ヒップの30〜150%）、エイムアシスト4段階、ジャイロ（OFF / ADS中のみ / 常時）、
+ボタンサイズ（80〜130%）と透明度（30〜100%）を SETTINGS で変えられます。
+
+### Bot
+
+6つの性格（AGGRESSIVE / BALANCED / DEFENSIVE / LOOTER / SNIPER / RUSHER）が
+交戦距離・撤退ライン・命中精度・反応速度・漁る時間・詰める確率を変えます。
+状態は LANDING / LOOTING / EXPLORING / MOVING_TO_ZONE / SEARCHING / COMBAT /
+TAKING_COVER / RETREATING / HEALING / RELOADING / ENDGAME / DEAD の12種類。
+遠くのBotほど更新間隔を落とす（0 / 1/20秒 / 1/6秒）ことで、16人でも60fpsを保ちます。
+
+### 入っていないもの（正直な記載）
+
+- **オンライン対戦**：実装していません。対戦相手はすべてローカルのBotです。
+  この環境には Unity / Photon / Xcode / 実機がなく、書いても動作を確認できないため、
+  検証できる Web スタックで作っています。
+- **乗り物・分隊（Duo/Squad）とダウン＆蘇生・ランクマッチ・スキン課金**：未実装です。
+
 ## 実際の場所をマップにする（LiDARスキャン変換）
 
 `tools/scan2map.html` をブラウザで開き、LiDARスキャンのファイルをドロップすると、
@@ -165,11 +228,13 @@ iPhone・iPad Pro の Polycam / Scaniverse / 3d Scanner App から書き出し�
 実ブラウザ（Chromium）で DOM のボタンとドラッグを実際に操作して検証します。
 
 ```bash
-node test/playtest.js       # 194項目の総合テスト（起動〜通しプレイ〜セーブ〜スキン切替）
+node test/playtest.js       # 194項目: STEEL PROTOCOL（起動〜通しプレイ〜セーブ〜スキン切替）
+node test/brtest.js         # 211項目: LAST ISLAND（輸送機〜降下〜漁り〜戦闘〜Zone〜勝敗〜報酬）
 node test/tooltest.js       # 40項目: スキャン変換ツール〜ゲームへの登録〜実プレイ
 node test/scan2map.test.js  # 35項目: 合成LiDARスキャンからの間取り復元精度（Node単体）
 node test/balance.js 5      # 凡庸なボットで全ステージを自動プレイし難易度を計測
-node test/shots.js <dir>    # 全画面のスクリーンショットを保存
+node test/shots.js <dir>    # STEEL PROTOCOL の全画面スクリーンショット
+node test/brshots.js <dir>  # LAST ISLAND の全画面スクリーンショット
 ```
 
 Playwright が必要です（`npm i -D playwright`）。`test/scan2map.test.js` だけは Node 単体で動きます。
@@ -177,6 +242,13 @@ Playwright が必要です（`npm i -D playwright`）。`test/scan2map.test.js` 
 `playtest.js` は「射撃ボタンが反応しない」「敵に弾が当たらない」「弾数が減らない」
 「ゲームオーバーにならない」「セーブできない」といった不具合を個別に検査し、
 最後に **タッチ操作だけで STAGE 1 をクリアできること** を通しで確認します。
+
+`brtest.js` はバトルロイヤル側を同じやり方で検査します。DROPボタンで実際に降下し、
+パラシュートが開いて着地し、落ちている武器を「拾う」でタップして取得し、
+FIREで敵Botを撃ち、安全地帯の外でダメージを受け、最後の1体を倒して VICTORY と
+リザルト・XP・コイン・ミッション進行までを通します。あわせて
+**操作ボタンが44px以上あること・画面外にはみ出さないこと・HUDの表示と重ならないこと・
+押しても何も起きないボタンが無いこと** をレイアウトから機械的に確認します。
 
 ## ファイル構成
 
@@ -195,6 +267,16 @@ js/render.js        レイキャスティング描画
 js/game.js          プレイヤー・敵AI・戦闘・ステージ進行
 js/ui.js            メニュー・アーマリー・各種ダイアログ
 js/main.js          起動とメインループ
+br/index.html       バトルロイヤルの画面・HUD
+br/css/br.css       BR専用UI（POPスキン・Safe Area対応・ボタンサイズ/透明度の変数）
+br/js/brdata.js     武器11種・弾薬・アイテム・レアリティ・エリア別ルート表・Bot性格6種・Zone6段階
+br/js/mapgen.js     96×96の島を生成（8ランドマーク・建物・到達性チェック・Loot配置）
+br/js/brgame.js     マッチ進行・Loot・ダメージ・撃破・安全地帯・輸送機・降下・爆発
+br/js/botai.js      Bot AI（12状態のステートマシン・視認/聴覚・遮蔽・距離別のLOD更新）
+br/js/brplayer.js   プレイヤー操作（ADS・姿勢・画面座標ヒットスキャン・ジャイロ）
+br/js/brsave.js     レベル/XP・コイン・通算成績・デイリーミッション・設定の保存
+br/js/brui.js       HUD・ミニマップ・全体マップ・インベントリ・リザルト
+br/js/brmain.js     起動・イベント配線・メインループ
 tools/scan2map.js   LiDARスキャン → 占有グリッド → マップ文字列 の変換ロジック
 tools/scan2map.html 上記のブラウザUI（ドラッグ&ドロップ・プレビュー・手描き編集・書き出し）
 test/               ヘッドレス実機テスト

@@ -8,6 +8,7 @@
     fire: false,
     sprint: false,
     crouch: false,
+    ads: false,
     sensitivity: 200,
     lefty: false,
     onReload: null, onSwitch: null, onSelectWeapon: null,
@@ -46,8 +47,9 @@
     reset() {
       this.move.x = this.move.y = 0;
       this.look.dx = this.look.dy = 0;
-      this.fire = false; this.sprint = false;
+      this.fire = false; this.sprint = false; this.ads = false;
       this._btnFire = false; this._mouseFire = false; this._btnSprint = false;
+      this._btnAds = false;
       this._stickId = this._lookId = null;
       if (this._els.base) this._els.base.classList.add('hidden');
       if (this._els.fire) this._els.fire.classList.remove('pressed');
@@ -62,7 +64,7 @@
       el.addEventListener('pointerdown', function (e) {
         if (!self._enabled) return;
         e.preventDefault();
-        el.setPointerCapture && el.setPointerCapture(e.pointerId);
+        try { el.setPointerCapture && el.setPointerCapture(e.pointerId); } catch (err) { }
         if (kind === 'stick') {
           if (self._stickId !== null) return;
           self._stickId = e.pointerId;
@@ -121,35 +123,44 @@
     },
 
     /* ---- action buttons ---- */
+
+    /** 押している間だけ有効になるボタンを登録する（BR側の追加ボタン用にも使う） */
+    hold(el, on, off) {
+      if (typeof el === 'string') el = U.$id(el);
+      if (!el) return;
+      const down = e => {
+        e.preventDefault(); e.stopPropagation();
+        el.classList.add('pressed');
+        try { el.setPointerCapture(e.pointerId); } catch (err) { }
+        on();
+      };
+      const up = e => {
+        e.preventDefault(); e.stopPropagation();
+        el.classList.remove('pressed');
+        if (off) off();
+      };
+      el.addEventListener('pointerdown', down, { passive: false });
+      el.addEventListener('pointerup', up, { passive: false });
+      el.addEventListener('pointercancel', up, { passive: false });
+    },
+
+    /** タップで1回だけ発火するボタンを登録する */
+    tap(el, fn) {
+      if (typeof el === 'string') el = U.$id(el);
+      if (!el) return;
+      el.addEventListener('pointerdown', e => {
+        e.preventDefault(); e.stopPropagation();
+        el.classList.add('pressed'); fn(e);
+      }, { passive: false });
+      const up = e => { e.stopPropagation(); el.classList.remove('pressed'); };
+      el.addEventListener('pointerup', up);
+      el.addEventListener('pointercancel', up);
+    },
+
     _bindButtons() {
       const self = this;
-      const hold = (el, on, off) => {
-        if (!el) return;
-        const down = e => {
-          e.preventDefault(); e.stopPropagation();
-          el.classList.add('pressed');
-          try { el.setPointerCapture(e.pointerId); } catch (err) { }
-          on();
-        };
-        const up = e => {
-          e.preventDefault(); e.stopPropagation();
-          el.classList.remove('pressed');
-          if (off) off();
-        };
-        el.addEventListener('pointerdown', down, { passive: false });
-        el.addEventListener('pointerup', up, { passive: false });
-        el.addEventListener('pointercancel', up, { passive: false });
-      };
-      const tap = (el, fn) => {
-        if (!el) return;
-        el.addEventListener('pointerdown', e => {
-          e.preventDefault(); e.stopPropagation();
-          el.classList.add('pressed'); fn();
-        }, { passive: false });
-        const up = e => { e.stopPropagation(); el.classList.remove('pressed'); };
-        el.addEventListener('pointerup', up);
-        el.addEventListener('pointercancel', up);
-      };
+      const hold = (el, on, off) => this.hold(el, on, off);
+      const tap = (el, fn) => this.tap(el, fn);
 
       hold(this._els.fire, () => { self._btnFire = true; }, () => { self._btnFire = false; });
       hold(this._els.sprint, () => { self._btnSprint = true; }, () => { self._btnSprint = false; });
@@ -177,6 +188,8 @@
       const view = U.$id('view');
       view.addEventListener('mousedown', e => { if (self._enabled && e.button === 0) self._mouseFire = true; });
       window.addEventListener('mouseup', e => { if (e.button === 0) self._mouseFire = false; });
+      view.addEventListener('mousedown', e => { if (self._enabled && e.button === 2) self._mouseAds = true; });
+      window.addEventListener('mouseup', e => { if (e.button === 2) self._mouseAds = false; });
       window.addEventListener('mousemove', e => {
         if (!self._enabled) return;
         if (document.pointerLockElement === view) { self.look.dx += e.movementX; self.look.dy += e.movementY; }
@@ -205,6 +218,7 @@
       }
       this.sprint = this._btnSprint || !!k.ShiftLeft;
       this.fire = !!(this._btnFire || this._mouseFire || k.Space);
+      this.ads = !!(this._btnAds || this._mouseAds || k.KeyF);
     },
 
     consumeLook() {

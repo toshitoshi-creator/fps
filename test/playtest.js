@@ -845,9 +845,10 @@ function report() {
   const vib = await page.evaluate(() => {
     const H = __game.Haptics;
     H.setEnabled(true);
-    const r1 = H.tap('hit');
+    // 'hit' は連打防止で 45ms 間隔の制限があるため、判定には制限のない種類を使う
+    const r1 = H.tap('kill');
     H.setEnabled(false);
-    const r2 = H.tap('hit');
+    const r2 = H.tap('kill');
     H.setEnabled(true);
     return { supported: H.supported, on: r1, off: r2 };
   });

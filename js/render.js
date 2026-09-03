@@ -128,7 +128,13 @@
 
     /* ---------- main frame ---------- */
     renderWorld(game) {
-      const x = this.ctx, W = this.W, H = this.H, cam = this.cam, map = game.map, th = this.theme;
+      const x = this.ctx, W = this.W, H = this.H, cam = this.cam, map = game.map;
+      // setStage 前に描画要求が来ても落ちないよう、既定のテーマを用意する
+      if (!this.theme) this.setStage({
+        ceil: '#0b1622', ceil2: '#16304a', floor: '#1a2430', floor2: '#26343f',
+        fog: '#0b1622', walls: ['#5b6a78', '#4a5a68', '#6b7a88', '#3f4d5a']
+      });
+      const th = this.theme;
       const horizon = cam.horizon;
 
       /* --- ceiling & floor --- */
@@ -590,7 +596,8 @@
       const x = this.ctx, W = this.W, H = this.H;
       const p = game.player;
       const w = p.weapon;
-      if (game.zoomT > 0.7 && w.zoom > 1) return;   // hidden while scoped
+      if (!w) return;                               // 素手のときは何も描かない
+      if (game.zoomT > 0.7 && (w.zoom || 1) > 1) return;   // hidden while scoped
       const base = Math.min(W / 900, H / 500);
       const s = base * 1.0 * (1 - game.zoomT * 0.25);
       // sway + bob + recoil + reload dip + switch dip

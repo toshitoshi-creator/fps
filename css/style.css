@@ -381,3 +381,7 @@ body.lefty .ammo-row{justify-content:flex-start;}
   .logo-line{margin-top:8px;}
   .title-foot{margin-top:12px;}
 }
+
+/* タイトルから別モード（バトルロイヤル）へ移動するリンク */
+.mode-link{display:inline-block;margin-top:8px;font-size:11px;letter-spacing:.1em;
+  color:var(--accent);text-decoration:none;border-bottom:1px solid currentColor;padding-bottom:1px}
