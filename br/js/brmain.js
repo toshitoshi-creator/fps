@@ -268,6 +268,7 @@
     if (!last) last = ts;
     let dt = (ts - last) / 1000; last = ts;
     if (dt > 0.25) dt = 0.25;
+    if (g.Char3D) Char3D.resetStats();
     frames++; fpsT += dt;
     if (fpsT >= 0.5) { fps = frames / fpsT; frames = 0; fpsT = 0; Render.autoTune(fps); }
 
@@ -302,6 +303,7 @@
     Render.init(U.$id('view'));
     Sprites.style = 'pop';
     Render.floorGrid = true;
+    Render.use3d = true;            // キャラクターを3Dモデルで描く
     Input.init();
     BRUI.init();
     applySettings();
@@ -348,12 +350,21 @@
       return p.weapons[slot || 0];
     },
     teleport(x, y) { BR.player.x = x; BR.player.y = y; },
+    /** 自分の3Dキャラクターを見るための三人称表示（確認用） */
+    thirdPerson(on, dist) {
+      Render.thirdPerson = on ? (dist || 2.6) : 0;
+      Render.showSelf = !!on;
+      return Render.thirdPerson;
+    },
+    char3d(on) { if (on != null) Char3D.enabled = !!on; return Char3D.enabled; },
+    char3dStats: () => Char3D.stats,
     /** テスト用。プレイヤーへのダメージだけを無効化する */
     godMode(on) {
       if (on && !BR._origDamage) {
         BR._origDamage = BR.damage;
         BR.damage = function (t, a, s, h, m) {
-          if (t.isPlayer) return 0;
+          // プレイヤーだけ無敵にする。撃った側の与ダメージ記録は残す
+          if (t.isPlayer) { if (s) s.damage += Math.round(a); return 0; }
           return BR._origDamage.call(this, t, a, s, h, m);
         };
       } else if (!on && BR._origDamage) {

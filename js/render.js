@@ -8,6 +8,7 @@
     scale: 1, stripe: 2, quality: 'AUTO',
     zbuf: null, rays: 0,
     tex: [], theme: null, floorGrid: true,
+    use3d: false,               // 3Dキャラクター描画（BR側で有効化する）
     cam: { x: 0, y: 0, dirX: 1, dirY: 0, planeX: 0, planeY: 1, D: 1, horizon: 0, eyeZ: .5, ang: 0 },
     _grad: { key: '', ceil: null, floor: null },
     fpsAvg: 60, _autoStep: 0,
@@ -61,11 +62,18 @@
     },
 
     /* ---------- camera ---------- */
+    // 自分の3Dモデルを目視で確認するための三人称オフセット（既定は0＝一人称）
+    thirdPerson: 0,
+    showSelf: false,
     updateCamera(p, shakeYaw, shakePitch, zoom) {
       const cam = this.cam;
       const ang = p.ang + (shakeYaw || 0);
       cam.ang = ang;
       cam.x = p.x; cam.y = p.y;
+      if (this.thirdPerson > 0) {
+        cam.x -= Math.cos(ang) * this.thirdPerson;
+        cam.y -= Math.sin(ang) * this.thirdPerson;
+      }
       cam.dirX = Math.cos(ang); cam.dirY = Math.sin(ang);
       cam.D = this.H * (zoom || 1);
       const pl = (this.W / 2) / cam.D;
@@ -231,6 +239,10 @@
         if (!p || p.depth > 44) return;
         list.push({ kind: 'enemy', e, p });
       });
+      if (this.showSelf && game.player) {
+        const p = this.project(game.player.x, game.player.y);
+        if (p && p.depth > 0.25) list.push({ kind: 'enemy', e: game.player, p });
+      }
       game.projectiles.forEach(pr => {
         if (!pr.alive) return;
         const p = this.project(pr.x, pr.y);
@@ -295,6 +307,24 @@
       const x0 = p.sx - spW / 2, x1 = p.sx + spW / 2;
       if (x1 < -8 || x0 > this.W + 8 || yBot < -8 || yTop > H + 8) { e.scr = null; return; }
 
+      // --- 3Dキャラクター（近〜中距離）。当たり判定に使う e.scr は
+      //     従来どおりスプライト基準のままなので、撃ち心地は変わらない ---
+      if (this.use3d && g.Char3D && Char3D.enabled) {
+        const segs3 = this._occlVisible(x0, x1, p.depth);
+        if (!segs3.length) { e.scr = null; return; }
+        e.scr = { x0, x1, yTop, yBottom: yBot, depth: p.depth, sx: p.sx, h: spH };
+        Char3D.shadow(this, e, p);
+        const tint = (e.hurtT > 0 && e.state !== 'dead')
+          ? { rgb: Raster3D.hexRGB(e.lastCrit ? '#ffd24a' : '#ff8a8a'), k: U.clamp(e.hurtT * 4.2, 0, 0.8) }
+          : null;
+        const box = Char3D.draw(this, e, p, { tint });
+        if (box) {
+          this._drawMuzzle3D(e, p);
+          this._drawEnemyTags(e, p, spW, spH, yTop, def);
+          return;
+        }
+      }
+
       let img;
       if (e.state === 'dead') {
         const f = U.clamp(Math.floor(e.deadT / 0.11), 0, 3);
@@ -314,13 +344,23 @@
       if (e.state === 'dead') alpha = U.clamp(1 - (e.deadT - 2.2) / 1.0, 0, 1);
       x.globalAlpha = alpha;
 
-      for (let s = 0; s < segs.length; s++) {
-        const sx = segs[s][0], sw = segs[s][1];
-        const u0 = (sx - x0) / spW, u1 = (sx + sw - x0) / spW;
-        const su0 = U.clamp(u0, 0, 1) * set.w, su1 = U.clamp(u1, 0, 1) * set.w;
-        if (su1 - su0 <= 0) continue;
-        const dx0 = x0 + (su0 / set.w) * spW;
-        x.drawImage(img, su0, 0, su1 - su0, set.h, dx0, yTop, (su1 - su0) / set.w * spW, spH);
+      // 分割数が多いときは、まとめてクリップして1回で描く（drawImage回数の削減）
+      if (segs.length > 4) {
+        x.save();
+        x.beginPath();
+        for (let s = 0; s < segs.length; s++) x.rect(segs[s][0], yTop, segs[s][1], spH);
+        x.clip();
+        x.drawImage(img, 0, 0, set.w, set.h, x0, yTop, spW, spH);
+        x.restore();
+      } else {
+        for (let s = 0; s < segs.length; s++) {
+          const sx = segs[s][0], sw = segs[s][1];
+          const u0 = (sx - x0) / spW, u1 = (sx + sw - x0) / spW;
+          const su0 = U.clamp(u0, 0, 1) * set.w, su1 = U.clamp(u1, 0, 1) * set.w;
+          if (su1 - su0 <= 0) continue;
+          const dx0 = x0 + (su0 / set.w) * spW;
+          x.drawImage(img, su0, 0, su1 - su0, set.h, dx0, yTop, (su1 - su0) / set.w * spW, spH);
+        }
       }
 
       // hurt flash — tint the silhouette so the hit reads without a coloured box
@@ -342,8 +382,13 @@
       x.globalAlpha = 1;
 
       if (e.state === 'dead') return;
+      this._drawEnemyTags(e, p, spW, spH, yTop, def);
+    },
 
-      // --- health bar + state pip (readability) ---
+    /** HPバーと警戒マーク。3D描画でもビルボードでも共通で使う */
+    _drawEnemyTags(e, p, spW, spH, yTop, def) {
+      if (e.state === 'dead') return;
+      const x = this.ctx;
       const showBar = e.hp < e.maxHp || def.boss || e.showBarT > 0;
       if (showBar && p.depth < 26) {
         const bw = Math.max(20, spW * 0.72), bh = Math.max(3, spH * 0.035);
@@ -356,7 +401,6 @@
           x.fillStyle = '#ff6ad5'; x.fillRect(bx, by - bh - 2, bw, 2);
         }
       }
-      // alert "!" marker
       if (e.alertT > 0 && p.depth < 26) {
         x.save();
         x.globalAlpha = U.clamp(e.alertT, 0, 1);
@@ -366,6 +410,27 @@
         x.fillText('!', p.sx, yTop - spH * 0.10);
         x.restore();
       }
+    },
+
+    /** 3Dモデルの銃口から出る発砲光 */
+    _drawMuzzle3D(e, p) {
+      if (!(e.flashT > 0.005)) return;
+      const w = Char3D.muzzleWorld(e);
+      if (!w) return;
+      const pr = this.project(w[0], w[1]);
+      if (!pr || this.zAt(pr.sx) < pr.depth) return;
+      const x = this.ctx;
+      const y = this.cam.horizon + (this.cam.eyeZ - w[2]) * pr.lineH;
+      const s = Math.max(3, pr.lineH * 0.10) * U.clamp(e.flashT * 3.4, 0.3, 1);
+      x.save();
+      x.globalCompositeOperation = 'lighter';
+      const gr = x.createRadialGradient(pr.sx, y, 0.5, pr.sx, y, s * 2.4);
+      gr.addColorStop(0, 'rgba(255,255,235,.95)');
+      gr.addColorStop(0.35, 'rgba(255,196,90,.75)');
+      gr.addColorStop(1, 'rgba(255,120,0,0)');
+      x.fillStyle = gr;
+      x.beginPath(); x.arc(pr.sx, y, s * 2.4, 0, 7); x.fill();
+      x.restore();
     },
 
     _drawProj(pr, p) {
@@ -575,10 +640,10 @@
       x.fillStyle = 'rgba(0,0,0,.92)';
       x.beginPath();
       x.rect(0, 0, W, H);
-      x.arc(W / 2, H / 2, r, 0, 7, true);
+      x.arc(W / 2, H / 2, r, 0, Math.PI * 2, true);
       x.fill();
       x.strokeStyle = 'rgba(120,220,255,.55)'; x.lineWidth = 2;
-      x.beginPath(); x.arc(W / 2, H / 2, r, 0, 7); x.stroke();
+      x.beginPath(); x.arc(W / 2, H / 2, r, 0, Math.PI * 2); x.stroke();
       x.beginPath();
       x.moveTo(W / 2 - r, H / 2); x.lineTo(W / 2 + r, H / 2);
       x.moveTo(W / 2, H / 2 - r); x.lineTo(W / 2, H / 2 + r);
@@ -598,6 +663,29 @@
       const w = p.weapon;
       if (!w) return;                               // 素手のときは何も描かない
       if (game.zoomT > 0.7 && (w.zoom || 1) > 1) return;   // hidden while scoped
+
+      // --- 3D: 腕と武器を立体で描く（三人称と同じ骨格・アニメを使う） ---
+      if (this.use3d && g.Char3D && Char3D.enabled) {
+        if (Char3D.drawViewModel(this, game)) {
+          if (p.flashT > 0.005) {
+            const mz = Char3D.vmMuzzle(this, game);
+            if (mz) {
+              const s = Math.max(6, mz.s * 0.055) * U.clamp(p.flashT * 3.4, 0.35, 1);
+              x.save();
+              x.globalCompositeOperation = 'lighter';
+              const g2 = x.createRadialGradient(mz.x, mz.y, 0.5, mz.x, mz.y, s * 2.6);
+              g2.addColorStop(0, 'rgba(255,255,240,.95)');
+              g2.addColorStop(0.32, 'rgba(255,198,96,.8)');
+              g2.addColorStop(1, 'rgba(255,120,0,0)');
+              x.fillStyle = g2;
+              x.beginPath(); x.arc(mz.x, mz.y, s * 2.6, 0, 7); x.fill();
+              x.restore();
+            }
+          }
+          this._muzzleLight(game, p, w);
+          return;
+        }
+      }
       const base = Math.min(W / 900, H / 500);
       const s = base * 1.0 * (1 - game.zoomT * 0.25);
       // sway + bob + recoil + reload dip + switch dip
@@ -623,18 +711,22 @@
         color: w.base.color
       });
 
-      // muzzle light on the scene
-      if (p.flashT > 0.005) {
-        x.save();
-        x.globalCompositeOperation = 'lighter';
-        x.globalAlpha = U.clamp(p.flashT * 2.4, 0, 0.5) * (w.flash || 0.3);
-        const gr = x.createRadialGradient(W / 2, H * 0.55, 10, W / 2, H * 0.55, Math.max(W, H) * 0.75);
-        gr.addColorStop(0, 'rgba(255,210,140,.9)');
-        gr.addColorStop(1, 'rgba(255,120,0,0)');
-        x.fillStyle = gr;
-        x.fillRect(0, 0, W, H);
-        x.restore();
-      }
+      this._muzzleLight(game, p, w);
+    },
+
+    /** 発砲時に画面全体をわずかに照らす */
+    _muzzleLight(game, p, w) {
+      if (!(p.flashT > 0.005)) return;
+      const x = this.ctx, W = this.W, H = this.H;
+      x.save();
+      x.globalCompositeOperation = 'lighter';
+      x.globalAlpha = U.clamp(p.flashT * 2.4, 0, 0.5) * (w.flash || 0.3);
+      const gr = x.createRadialGradient(W / 2, H * 0.55, 10, W / 2, H * 0.55, Math.max(W, H) * 0.75);
+      gr.addColorStop(0, 'rgba(255,210,140,.9)');
+      gr.addColorStop(1, 'rgba(255,120,0,0)');
+      x.fillStyle = gr;
+      x.fillRect(0, 0, W, H);
+      x.restore();
     },
 
     render(game) {
@@ -646,7 +738,9 @@
       this.renderTracers(game);
       this.renderDamageNumbers(game);
       this.renderWeapon(game);
-      this.renderScope(game.zoomT);
+      // 倍率のある武器だけスコープを覗いた表示にする
+      const pw = p.weapon;
+      this.renderScope((pw && (pw.zoom || 1) > 1.5) ? game.zoomT : 0);
     }
   };
 
