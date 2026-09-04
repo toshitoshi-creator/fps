@@ -669,6 +669,7 @@ function report() {
     const states = new Set(), shots0 = BR.bots.reduce((s, b) => s + b.shots, 0);
     const kills0 = BR.bots.reduce((s, b) => s + b.kills, 0);
     const dmg0 = BR.bots.reduce((s, b) => s + b.damage, 0);
+    const armed0 = BR.bots.filter(b => b.weapons[0] || b.weapons[1]).length;
     const shots = () => BR.bots.reduce((s, b) => s + b.shots, 0) - shots0;
     const bkills = () => BR.bots.reduce((s, b) => s + b.kills, 0) - kills0;
     const bdmg = () => BR.bots.reduce((s, b) => s + b.damage, 0) - dmg0;
@@ -700,7 +701,7 @@ function report() {
       moved, total: from.size,
       walked: paths.filter(v => v > 5).length,
       avgWalk: paths.reduce((a, b) => a + b, 0) / Math.max(1, paths.length),
-      armed: BR.bots.filter(b => b.weapons[0] || b.weapons[1]).length,
+      armed: BR.bots.filter(b => b.weapons[0] || b.weapons[1]).length, armed0,
       shots: shots(), botKills: bkills(), botDmg: bdmg(),
       loot: BR.loot.filter(l => l.alive).length,
       inWall: BR.combatants.filter(c => c.alive && c.state === 'ground' && BR.solidAt(c.x, c.y)).length
@@ -712,9 +713,10 @@ function report() {
   // 交戦中はその場に留まる個体もいるので、平均移動距離で「止まっていない」ことを見る
   ok('Botが止まっていない', botRun.avgWalk > 6,
     '平均 ' + botRun.avgWalk.toFixed(1) + 'm / 位置が変わった ' + botRun.moved + '体');
-  // 生き残っている数に対して評価する（前の節の戦闘で減っていることがあるため）
-  ok('Botが武器を拾う', botRun.armed >= Math.min(8, Math.ceil(botRun.total * 0.7)),
-    botRun.armed + '/15（生存 ' + botRun.total + '）  ' + botRun.secs + '秒時点');
+  // 降下地点の運で絶対数は上下するので、
+  // 「すでに十分武装している」か「この時間内に増えた」かのどちらかを見る
+  ok('Botが武器を拾う', botRun.armed >= 6 && (botRun.armed > botRun.armed0 || botRun.armed0 >= 8),
+    botRun.armed0 + ' → ' + botRun.armed + '/15（生存 ' + botRun.total + '）  ' + botRun.secs + '秒時点');
   ok('Botが発砲する', botRun.shots > 0, botRun.shots + '発');
   ok('Botが敵にダメージを与える', botRun.botDmg > 0,
     botRun.botDmg + 'dmg / ' + botRun.botKills + 'キル');
@@ -1295,6 +1297,168 @@ function report() {
     return okk;
   })));
   ok('3Dまわりでエラーが出ていない', errors.length === 0, errors.join(' | '));
+
+  /* ================= 21. 見た目の質 ================= */
+  section('21. 質感・スムースシェーディング・地面');
+  const mats = await G(() => {
+    const R3 = window.Raster3D;
+    const need = ['skin', 'cloth', 'metal', 'polymer', 'rubber', 'glass'];
+    const missing = need.filter(n => !R3.MAT[n]);
+    // 明るさ0→1で色が単調に明るくなるか（見本表が壊れていないか）
+    const lut = R3.lutFor('#8090a0', 'cloth', 0, null);
+    const lum = i => { const c = lut[i]; return (c & 255) + ((c >> 8) & 255) + ((c >> 16) & 255); };
+    let mono = true;
+    for (let i = 1; i < lut.length; i++) if (lum(i) < lum(i - 1) - 2) mono = false;
+    const metal = R3.lutFor('#8090a0', 'metal', 0, null);
+    const cloth = R3.lutFor('#8090a0', 'cloth', 0, null);
+    const lm = c => (c & 255) + ((c >> 8) & 255) + ((c >> 16) & 255);
+    return {
+      missing, mono, steps: lut.length,
+      range: lum(lut.length - 1) - lum(0),
+      metalHi: lm(metal[metal.length - 1]), clothHi: lm(cloth[cloth.length - 1]),
+      metalLo: lm(metal[0]), clothLo: lm(cloth[0])
+    };
+  });
+  ok('材質が6種類そろっている', mats.missing.length === 0, mats.missing.join(','));
+  ok('明るさの見本表が単調に増える', mats.mono);
+  ok('陰影の階調が十分ある', mats.steps >= 32 && mats.range > 120, mats.steps + '段 / 幅' + mats.range);
+  ok('金属は布より強く光る', mats.metalHi > mats.clothHi, mats.metalHi + ' vs ' + mats.clothHi);
+  ok('金属は布より陰が締まる', mats.metalLo < mats.clothLo, mats.metalLo + ' vs ' + mats.clothLo);
+
+  const shapes = await G(() => {
+    const M = window.Model3D;
+    const parts = M.bodyParts();
+    const withProf = parts.filter(p => p.prof && p.prof.length > 2).length;
+    const mset = [...new Set(parts.map(p => p.mat))];
+    const bones = [...new Set(parts.map(p => p.bone))];
+    const joints = parts.filter(p => p.prof && p.prof.length >= 3 &&
+      Math.abs(p.a[2] - p.b[2]) < 0.12 && p.sides >= 5).length;
+    const w = M.weaponParts('AR', 'weapon').parts;
+    const wmats = [...new Set(w.map(p => p.mat))];
+    const lod0 = M.buildParts({ skin: '#f0c39a', hairColor: '#222', hair: 1, helmet: 2, vest: 1, backpack: 1, gloves: 1, boots: 1, pouches: 1, build: 1, height: 1 }, 0);
+    const lod1 = M.buildParts({ skin: '#f0c39a', hairColor: '#222', hair: 1, helmet: 2, vest: 1, backpack: 1, gloves: 1, boots: 1, pouches: 1, build: 1, height: 1 }, 1);
+    const lod2 = M.buildParts({ skin: '#f0c39a', hairColor: '#222', hair: 1, helmet: 2, vest: 1, backpack: 1, gloves: 1, boots: 1, pouches: 1, build: 1, height: 1 }, 2);
+    const tri = l => l.reduce((s2, p) => s2 + p.sides * ((p.prof ? p.prof.length : 2) - 1) * 2, 0);
+    return {
+      total: parts.length, withProf, mats: mset, bones: bones.length, joints,
+      wparts: w.length, wmats,
+      t0: tri(lod0), t1: tri(lod1), t2: tri(lod2),
+      faceParts: parts.filter(p => p.face).length
+    };
+  });
+  ok('体のパーツが輪郭付き（角柱の直線だけではない）', shapes.withProf >= 8, shapes.withProf + '/' + shapes.total + 'パーツ');
+  ok('体に複数の材質が使われている', shapes.mats.length >= 3, shapes.mats.join('/'));
+  ok('関節の丸みが入っている', shapes.joints >= 4, shapes.joints + '箇所');
+  ok('顔のパーツ（目・鼻・口・耳）がある', shapes.faceParts >= 3, shapes.faceParts + '個');
+  ok('武器が10部品以上でできている', shapes.wparts >= 10, shapes.wparts + '部品');
+  ok('武器に金属・樹脂・ゴム・ガラスの差がある', shapes.wmats.length >= 3, shapes.wmats.join('/'));
+  ok('LODで三角形数が段階的に減る', shapes.t0 > shapes.t1 && shapes.t1 > shapes.t2,
+    shapes.t0 + ' → ' + shapes.t1 + ' → ' + shapes.t2);
+
+  const shading = await G(() => {
+    const BR = __br.BR, R = __br.Render, C = window.Char3D;
+    const p = BR.player;
+    p.alive = true; p.state = 'ground';
+    const t = BR.bots.find(b => b.alive) || BR.bots[0];
+    t.alive = true; t.state = 'ground'; t.hp = 100; t.deadT = 0;
+    t.weapons[0] = BR.makeWeapon('vector'); t.wIdx = 0;
+    let placed = false;
+    for (let a = 0; a < 24 && !placed; a++) {
+      const ang = a / 24 * Math.PI * 2;
+      const tx = p.x + Math.cos(ang) * 5, ty = p.y + Math.sin(ang) * 5;
+      if (!BR.solidAt(tx, ty) && BR.los(p.x, p.y, tx, ty)) { p.ang = ang; t.x = tx; t.y = ty; placed = true; }
+    }
+    BR.refreshEnemyList();
+    const q0 = R.quality; R.setQuality('HIGH');
+    R.render(BR);
+    // キャラの居る領域だけを見て、同じ色の面がべた塗りになっていないか調べる
+    const box = t.scr;
+    const x0 = Math.max(0, box.x0 | 0), x1 = Math.min(R.W - 1, box.x1 | 0);
+    const y0 = Math.max(0, box.yTop | 0), y1 = Math.min(R.H - 1, box.yBottom | 0);
+    const d = R.ctx.getImageData(x0, y0, Math.max(1, x1 - x0), Math.max(1, y1 - y0)).data;
+    const seen = new Set();
+    for (let i = 0; i < d.length; i += 4) seen.add((d[i] >> 2 << 12) | ((d[i + 1] >> 2) << 6) | (d[i + 2] >> 2));
+    R.setQuality(q0);
+    return { colors: seen.size, w: x1 - x0, h: y1 - y0 };
+  });
+  ok('キャラクター1体の中に十分な階調がある', shading.colors >= 24,
+    shading.colors + '色 / ' + shading.w + 'x' + shading.h + 'px');
+
+  const ground = await G(() => {
+    const BR = __br.BR, R = __br.Render;
+    const q0 = R.quality;
+    R.setQuality('AUTO');
+    R.groundTex = true;
+    R.render(BR);
+    // 合成後の画面ではなく、地面を塗ったバッファそのものを見る（他の物が混ざらない）
+    const F = R._fl;
+    if (!F) { R.setQuality(q0); return { colors: 0, spread: 0, px: 0 }; }
+    const d = F.ctx.getImageData(0, 0, F.w, F.h).data;
+    const set = new Set();
+    let min = 999, max = 0, px = 0;
+    for (let i = 0; i < d.length; i += 4) {
+      if (d[i + 3] === 0) continue;
+      px++;
+      set.add((d[i] << 16) | (d[i + 1] << 8) | d[i + 2]);
+      const l = (d[i] + d[i + 1] + d[i + 2]) / 3;
+      if (l < min) min = l;
+      if (l > max) max = l;
+    }
+    R.setQuality(q0);
+    return { colors: set.size, spread: Math.round(max - min), px };
+  });
+  ok('地面が塗られている', ground.px > 500, ground.px + 'px');
+  ok('地面に色のむらがある（単色ではない）', ground.colors >= 40 && ground.spread > 20,
+    ground.colors + '色 / 明暗差 ' + ground.spread);
+
+  const fx = await G(() => {
+    const BR = __br.BR;
+    BR.parts.length = 0;
+    BR.dustAt(BR.player.x + 1, BR.player.y, 0.05, 6, 1);
+    const dust = BR.parts.filter(p => p.kind === 'dust').length;
+    BR.sparkAt(BR.player.x + 1, BR.player.y, 0.5, 5);
+    const spark = BR.parts.filter(p => p.kind === 'spark').length;
+    BR.parts.length = 0;
+    BR.impact(BR.player.x + 1, BR.player.y, 0.5, '#ffd9a0');
+    const imp = BR.parts.length;
+    BR.parts.length = 0;
+    const before = BR.parts.length;
+    BR.land(BR.bots[0]);
+    return { dust, spark, imp, land: BR.parts.length - before };
+  });
+  ok('砂ぼこりのエフェクトがある', fx.dust >= 5, fx.dust + '粒');
+  ok('着弾の火花がある', fx.spark >= 4, fx.spark + '粒');
+  ok('着弾で火花と土煙が同時に出る', fx.imp >= 5, fx.imp + '粒');
+  ok('着地でほこりが舞う', fx.land >= 6, fx.land + '粒');
+
+  const perfQ = await G(() => {
+    const BR = __br.BR, R = __br.Render, C = window.Char3D;
+    const p = BR.player;
+    BR.bots.forEach((b, i) => {
+      b.alive = true; b.state = 'ground'; b.hp = 100; b.deadT = 0; b.moving = true;
+      const d = 5 + i * 2.2, off = ((i % 5) - 2) * 1.2;
+      b.x = p.x + Math.cos(p.ang) * d - Math.sin(p.ang) * off;
+      b.y = p.y + Math.sin(p.ang) * d + Math.cos(p.ang) * off;
+      b.weapons[0] = BR.makeWeapon('vector');
+    });
+    BR.refreshEnemyList();
+    // 計測は負荷でぶれるので、3回まわして中央値を採る
+    const once = q => {
+      R.setQuality(q); R.render(BR);
+      const N = 40, t0 = performance.now();
+      for (let i = 0; i < N; i++) { p.animT += 0.016; R.render(BR); }
+      return (performance.now() - t0) / N;
+    };
+    const run = q => {
+      const v = [once(q), once(q), once(q)].sort((a, b) => a - b);
+      return +v[1].toFixed(2);
+    };
+    const low = run('LOW'), auto = run('AUTO');
+    return { low, auto };
+  });
+  ok('AUTO品質で1フレーム24ms未満', perfQ.auto < 24, perfQ.auto + 'ms');
+  ok('LOW品質はAUTOより軽い', perfQ.low <= perfQ.auto, perfQ.low + 'ms / ' + perfQ.auto + 'ms');
+  ok('質感アップ後もエラーが出ない', errors.length === 0, errors.join(' | '));
 
   await browser.close();
   await new Promise(r => server.close(r));

@@ -2,6 +2,27 @@
 (function (g) {
   'use strict';
 
+  /* --- 地面の模様に使う値ノイズ（整数格子の乱数を滑らかに補間する） --- */
+  const NOISE = new Float32Array(4096);
+  (function () {
+    let seed = 0x9e3779b9;
+    for (let i = 0; i < NOISE.length; i++) {
+      seed ^= seed << 13; seed ^= seed >>> 17; seed ^= seed << 5;
+      NOISE[i] = ((seed >>> 8) & 0xffff) / 65535;
+    }
+  })();
+  function nAt(xi, yi) {
+    return NOISE[((xi * 73856093) ^ (yi * 19349663)) & 4095];
+  }
+  function vnoise(x, y) {
+    const xi = Math.floor(x), yi = Math.floor(y);
+    let fx = x - xi, fy = y - yi;
+    fx = fx * fx * (3 - 2 * fx); fy = fy * fy * (3 - 2 * fy);
+    const a = nAt(xi, yi), b = nAt(xi + 1, yi);
+    const c = nAt(xi, yi + 1), d = nAt(xi + 1, yi + 1);
+    return (a + (b - a) * fx) + ((c + (d - c) * fx) - (a + (b - a) * fx)) * fy;
+  }
+
   const R = {
     canvas: null, ctx: null,
     W: 0, H: 0, cssW: 0, cssH: 0,
@@ -9,6 +30,9 @@
     zbuf: null, rays: 0,
     tex: [], theme: null, floorGrid: true,
     use3d: false,               // 3Dキャラクター描画（BR側で有効化する）
+    groundTex: false,           // 地面のフロアキャスト（BR側で有効化する）
+    groundDirt: null,           // 土の色（テーマごとに設定）
+    sun: null,                  // 太陽の向き [x,y,z]。空に光芒を描く
     cam: { x: 0, y: 0, dirX: 1, dirY: 0, planeX: 0, planeY: 1, D: 1, horizon: 0, eyeZ: .5, ang: 0 },
     _grad: { key: '', ceil: null, floor: null },
     fpsAvg: 60, _autoStep: 0,
@@ -78,6 +102,7 @@
       cam.D = this.H * (zoom || 1);
       const pl = (this.W / 2) / cam.D;
       cam.planeX = -cam.dirY * pl; cam.planeY = cam.dirX * pl;
+      cam.planeLen = pl;
       cam.horizon = this.H / 2 + (p.pitch + (shakePitch || 0)) * this.H;
       cam.eyeZ = p.eyeZ;
     },
@@ -160,8 +185,10 @@
       const fy = U.clamp(horizon, 0, H);
       x.fillRect(0, fy, W, H - fy);
 
-      // POP: 遠近の縞で床に奥行きを出す（1ピクセル単位の床描画より遥かに軽い）
-      if (this.floorGrid && horizon < H) {
+      // 地面。1/4解像度でフロアキャストして、草・土・小石のむらを描く。
+      // 世界座標から色を決めるので、歩くと模様がきちんと流れる。
+      if (this.groundTex && horizon < H - 2) this.renderFloor(game, horizon);
+      else if (this.floorGrid && horizon < H) {
         x.save();
         const eye = cam.eyeZ * cam.D;
         for (let k = 1; k <= 16; k++) {
@@ -175,6 +202,32 @@
         }
         x.restore();
       }
+      // 太陽の光芒。空が単なるグラデーションに見えないようにする
+      if (this.sun && horizon > 0) {
+        const sa = Math.atan2(this.sun[1], this.sun[0]);
+        let da = sa - cam.ang;
+        while (da > Math.PI) da -= U.TAU;
+        while (da < -Math.PI) da += U.TAU;
+        if (Math.abs(da) < 1.35) {
+          const sx2 = W / 2 + Math.tan(da) * (W / 2) / (cam.planeLen || 0.66);
+          const sy2 = horizon - H * 0.62 * (this.sun[2] || 0.8);
+          const rad = Math.max(W, H) * 0.42;
+          const gr2 = x.createRadialGradient(sx2, sy2, 1, sx2, sy2, rad);
+          gr2.addColorStop(0, 'rgba(255,250,225,.85)');
+          gr2.addColorStop(0.12, 'rgba(255,240,200,.34)');
+          gr2.addColorStop(0.45, 'rgba(255,235,190,.10)');
+          gr2.addColorStop(1, 'rgba(255,235,190,0)');
+          x.save();
+          x.globalCompositeOperation = 'lighter';
+          x.beginPath();
+          x.rect(0, 0, W, Math.max(0, Math.min(H, horizon)));
+          x.clip();
+          x.fillStyle = gr2;
+          x.fillRect(sx2 - rad, sy2 - rad, rad * 2, rad * 2);
+          x.restore();
+        }
+      }
+
       // horizon haze
       if (horizon > -20 && horizon < H + 20) {
         x.globalAlpha = 0.5;
@@ -216,8 +269,9 @@
         x.drawImage(tex, tx, srcY, 1, srcH, sx, dy0, SW, dy1 - dy0);
 
         // distance fog + side shading
-        const fogMax = this.floorGrid ? 0.46 : 0.58;    // POPは白飛びを抑える
-        let a = U.clamp((dist - 3.2) / 22, 0, fogMax);
+        // 近〜中距離は素の色を保ち、遠景だけ大気に溶かす（奥行きは出しつつ白飛びを防ぐ）
+        const fogMax = this.floorGrid ? 0.46 : 0.58;
+        let a = U.clamp((dist - 6) / 30, 0, fogMax);
         if (hit.side === 1) a = Math.min(fogMax + 0.1, a + 0.13);
         if (a > 0.02) {
           x.globalAlpha = a;
@@ -226,6 +280,94 @@
           x.globalAlpha = 1;
         }
       }
+    },
+
+    /* ---------- 地面（フロアキャスト） ---------- */
+    // 補間つきの値ノイズ。格子が四角く見えないよう滑らかにつなぐ
+    _vn: null,
+    /**
+     * 画面の下半分を粗い格子でサンプリングし、世界座標から地面色を決める。
+     * 1ピクセルずつではなく 1/4 の解像度で塗ってから引き伸ばすので軽い。
+     */
+    renderFloor(game, horizon) {
+      const cam = this.cam, W = this.W, H = this.H;
+      const y0 = Math.max(0, Math.ceil(horizon));
+      const fh = H - y0;
+      if (fh <= 1) return;
+      // 描画品質でサンプル間隔を変える（LOWほど粗く）
+      const q = this.quality;
+      const SX = q === 'LOW' ? 6 : (q === 'HIGH' ? 2 : 4), SY = q === 'HIGH' ? 1 : 2;
+      const fw = Math.ceil(W / SX), fr = Math.ceil(fh / SY);
+      if (!this._fl || this._fl.w !== fw || this._fl.h !== fr) {
+        const cv = document.createElement('canvas');
+        cv.width = fw; cv.height = fr;
+        const cx2 = cv.getContext('2d');
+        this._fl = { w: fw, h: fr, cv, ctx: cx2, img: cx2.createImageData(fw, fr) };
+        this._fl.px = new Uint32Array(this._fl.img.data.buffer);
+      }
+      const F = this._fl, px = F.px;
+      const th = this.theme;
+      const g1 = Raster3D.hexRGB(th.floor), g2 = Raster3D.hexRGB(th.floor2);
+      const fogc = Raster3D.hexRGB(th.fog);
+      const dirt = this.groundDirt || [122, 104, 78];
+      const camX0 = -1, camX1 = 1;
+      const rdx0 = cam.dirX + cam.planeX * camX0, rdy0 = cam.dirY + cam.planeY * camX0;
+      const rdx1 = cam.dirX + cam.planeX * camX1, rdy1 = cam.dirY + cam.planeY * camX1;
+      const eyeD = cam.eyeZ * cam.D;
+      const map = game.map;
+      const mw = map ? map.w : 0, mh = map ? map.h : 0;
+
+      for (let j = 0; j < fr; j++) {
+        const sy = y0 + j * SY + 0.5;
+        const rowD = eyeD / Math.max(0.5, sy - horizon);   // その行の距離
+        if (rowD > 90) { for (let i = 0; i < fw; i++) px[j * fw + i] = 0; continue; }
+        const fog = U.clamp((rowD - 8) / 34, 0, 0.66);
+        const sx0 = cam.x + rdx0 * rowD, sy0 = cam.y + rdy0 * rowD;
+        const stepX = (cam.x + rdx1 * rowD - sx0) / fw;
+        const stepY = (cam.y + rdy1 * rowD - sy0) / fw;
+        let wx = sx0, wy = sy0;
+        const rowO = j * fw;
+        for (let i = 0; i < fw; i++, wx += stepX, wy += stepY) {
+          // なめらかな値ノイズを2オクターブ。歩くと模様が正しく流れる
+          const n1 = vnoise(wx * 3.1, wy * 3.1);
+          const n2 = vnoise(wx * 0.85, wy * 0.85);
+          const patch = vnoise(wx * 0.24 + 11.3, wy * 0.24 - 7.1);
+          const t = U.clamp(0.30 + n2 * 0.52 + n1 * 0.26, 0, 1);
+          let r = g1[0] + (g2[0] - g1[0]) * t;
+          let g3 = g1[1] + (g2[1] - g1[1]) * t;
+          let b = g1[2] + (g2[2] - g1[2]) * t;
+          if (patch > 0.60) {                    // 土がのぞくところ
+            const k = U.clamp((patch - 0.60) / 0.30, 0, 1) * 0.9;
+            const dv = 0.75 + n1 * 0.45;
+            r += (dirt[0] * dv - r) * k;
+            g3 += (dirt[1] * dv - g3) * k;
+            b += (dirt[2] * dv - b) * k;
+          }
+          if (mw && wx > 1 && wy > 1 && wx < mw - 1 && wy < mh - 1) {
+            const gx = wx | 0, gy = wy | 0;
+            const tile = map.grid[gy * mw + gx];
+            if (tile === 4) { r = r * 0.30 + 34; g3 = g3 * 0.42 + 86; b = b * 0.48 + 136; }
+            else {
+              // 壁ぎわを暗くして、建物と地面が接している感じを出す（簡易AO）
+              const fx = wx - gx, fy = wy - gy;
+              let ao = 0;
+              if (fx < 0.34 && map.grid[gy * mw + gx - 1]) ao = Math.max(ao, (0.34 - fx) * 2.9);
+              else if (fx > 0.66 && map.grid[gy * mw + gx + 1]) ao = Math.max(ao, (fx - 0.66) * 2.9);
+              if (fy < 0.34 && map.grid[(gy - 1) * mw + gx]) ao = Math.max(ao, (0.34 - fy) * 2.9);
+              else if (fy > 0.66 && map.grid[(gy + 1) * mw + gx]) ao = Math.max(ao, (fy - 0.66) * 2.9);
+              if (ao > 0) { const k = 1 - ao * 0.42; r *= k; g3 *= k; b *= k; }
+            }
+          }
+          if (fog > 0) { r += (fogc[0] - r) * fog; g3 += (fogc[1] - g3) * fog; b += (fogc[2] - b) * fog; }
+          px[rowO + i] = 0xff000000 | ((b | 0) << 16) | ((g3 | 0) << 8) | (r | 0);
+        }
+      }
+      F.ctx.putImageData(F.img, 0, 0);
+      const x = this.ctx;
+      const sm = x.imageSmoothingEnabled;
+      x.imageSmoothingEnabled = true;             // 引き伸ばしをなめらかに
+      x.drawImage(F.cv, 0, 0, fw, fr, 0, y0, W, fh);
+      x.imageSmoothingEnabled = sm;
     },
 
     /* ---------- sprites (enemies / projectiles / pickups / particles) ---------- */
@@ -516,8 +658,50 @@
       const lineH = p.lineH;
       const s = Math.max(1, lineH * pt.size);
       const yc = cam.horizon + (cam.eyeZ - pt.z) * lineH;
+      const k = U.clamp(pt.life / pt.maxLife, 0, 1);
+
+      // 砂ぼこり・煙は「ふわっと広がって薄れる」丸で描く
+      if (pt.kind === 'dust') {
+        const rr2 = s * (1.6 - k * 0.7);
+        if (!this._dustGrad) {
+          const gr = x.createRadialGradient(0, 0, 0, 0, 0, 1);
+          gr.addColorStop(0, 'rgba(255,255,255,0.85)');
+          gr.addColorStop(0.6, 'rgba(255,255,255,0.35)');
+          gr.addColorStop(1, 'rgba(255,255,255,0)');
+          this._dustGrad = gr;
+        }
+        x.save();
+        x.globalAlpha = k * k * (pt.alpha || 0.5);
+        x.translate(p.sx, yc);
+        x.scale(rr2, rr2 * 0.8);
+        x.fillStyle = pt.color;
+        x.beginPath(); x.arc(0, 0, 1, 0, 7); x.fill();
+        x.globalAlpha = k * k * (pt.alpha || 0.5) * 0.5;
+        x.fillStyle = this._dustGrad;
+        x.beginPath(); x.arc(0, 0, 1, 0, 7); x.fill();
+        x.restore();
+        return;
+      }
+      // 火花は細い光の線
+      if (pt.kind === 'spark') {
+        x.save();
+        x.globalCompositeOperation = 'lighter';
+        x.globalAlpha = k;
+        x.strokeStyle = pt.color;
+        x.lineWidth = Math.max(1, s * 0.35);
+        x.lineCap = 'round';
+        const vx = (pt.vx || 0), vz = (pt.vz || 0);
+        const l2 = Math.max(1, s * 1.4);
+        x.beginPath();
+        x.moveTo(p.sx, yc);
+        x.lineTo(p.sx - vx * l2 * 0.5, yc + vz * l2 * 0.4);
+        x.stroke();
+        x.restore();
+        return;
+      }
+
       x.save();
-      x.globalAlpha = U.clamp(pt.life / pt.maxLife, 0, 1);
+      x.globalAlpha = k;
       x.fillStyle = pt.color;
       if (Sprites.style === 'pop') {
         // 紙吹雪のような丸／角丸。加算合成は明るい背景で飛ぶので使わない

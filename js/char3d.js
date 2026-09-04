@@ -16,13 +16,15 @@
   const _sx = new Float32Array(MAXV), _sy = new Float32Array(MAXV), _sw = new Float32Array(MAXV);
   const _nx = new Float32Array(MAXV), _ny = new Float32Array(MAXV), _nz = new Float32Array(MAXV);
   const _ok = new Uint8Array(MAXV);
+  const _lm = new Float32Array(MAXV);          // 頂点ごとの明るさ（0..1）
   const _v0 = [0, 0, 0], _v1 = [0, 0, 0], _v2 = [0, 0, 0];
-  const _pa = [0, 0, 0], _pb = [0, 0, 0], _pc = [0, 0, 0], _pd = [0, 0, 0];
+  const _pa = [0, 0, 0, 0], _pb = [0, 0, 0, 0], _pc = [0, 0, 0, 0], _pd = [0, 0, 0, 0];
   // パーツごとの頂点開始位置（毎フレームの配列確保を避けるため型付き配列で持つ）
   const MAXP = 96;
   const _pBase = new Int32Array(MAXP), _pIdx = new Int32Array(MAXP);
-  const _pCol = new Int32Array(MAXP);
-  const _colTable = [];
+  const _pRings = new Int32Array(MAXP);
+  const _pCapA = new Float32Array(MAXP), _pCapB = new Float32Array(MAXP);
+  const _lutTable = [];
 
   const partCache = {};        // "defKey:lod" -> parts
   const skelVM = {};           // 一人称ビューモデル用の骨（視点空間）
@@ -59,27 +61,63 @@
       const S = window.Sprites;
       const main = pal.main || '#8ea0b0';
       const sec = pal.sec || S.shade(main, -30);
+      const gc = def.gearColor || '#3a424b';
       return {
         main: main,
-        pants: S.shade(sec, -14),
+        pants: def.pants || S.shade(sec, -18),
         skin: def.skin,
         hair: def.hairColor,
-        boot: '#2f363d',
-        gear: S.shade(sec, -26),
-        gear2: '#39424c',
+        boot: '#2b3138',
+        gear: gc,
+        gear2: S.shade(gc, -18),
         visor: pal.visor || '#dff6ff',
         weapon: '#4a525c',
         weapon2: '#2b3138',
         glove: '#333b44',
-        sleeve: S.shade(main, -34)
+        sleeve: S.shade(gc, 8),
+        eye: '#20262e',
+        mouth: '#8f5a52',
+        sole: '#20242a'
       };
+    },
+
+    /**
+     * 頂点1つぶんの明るさ（0..1）。
+     *   ・拡散光（平行光源）
+     *   ・空からの環境光。上を向いた面ほど明るく、下向きは暗い＝簡易AO
+     *   ・材質ごとのハイライト
+     * を合わせて 0..1 に収める。実際の色は材質ごとの色見本(LUT)が持つ。
+     */
+    lightVertex(nx, ny, nz, lx, ly, lz, hx, hy, hz, mt, ao) {
+      const ndl = nx * lx + ny * ly + nz * lz;
+      const sky = 0.55 + 0.45 * (nz * 0.5 + 0.5);          // 下向きの面を締める
+      let l = 0.30 * sky * ao + (ndl > 0 ? ndl * 0.62 * ao : ndl * 0.06);
+      if (mt.spec > 0.02) {
+        const nh = nx * hx + ny * hy + nz * hz;
+        if (nh > 0) {
+          const n2 = nh * nh, n4 = n2 * n2, n8 = n4 * n4;
+          const sp = mt.shin === 0 ? n8 : (mt.shin === 1 ? n8 * n8 : (n8 * n8) * (n8 * n8));
+          l += sp * mt.spec * 0.55;
+        }
+      }
+      return l < 0 ? 0 : (l > 1 ? 1 : l);
+    },
+
+    /** 被弾フラッシュ用に色見本を作り替える（1フレームぶんだけ持つ） */
+    tintLut(lut, tint) {
+      const key = tint.k.toFixed(2) + ':' + tint.rgb.join(',');
+      let map = this._tintCache;
+      if (!map || map.key !== key) map = this._tintCache = { key, m: new Map() };
+      let out = map.m.get(lut);
+      if (!out) { out = Raster3D.lutTint(lut, tint.rgb, tint.k); map.m.set(lut, out); }
+      return out;
     },
 
     /** 距離と描画品質から詳細度を決める（§25 Bot LOD） */
     lodFor(depth, quality) {
       const k = quality === 'LOW' ? 0.55 : (quality === 'MID' ? 0.8 : 1);
-      if (depth < 9 * k) return 0;
-      if (depth < 19 * k) return 1;
+      if (depth < 7.5 * k) return 0;
+      if (depth < 17 * k) return 1;
       if (depth < 30 * k) return 2;
       return 3;                        // 3 = 3Dをやめて従来のビルボード
     },
@@ -124,9 +162,17 @@
 
       /* --- 1. ポーズ --- */
       const aiming = o.aiming != null ? o.aiming : this.isAiming(c);
-      const P = Model3D.animate(poseBox, c, (c.animT || 0) + m.t, { aiming, armed: !!wcls });
+      // 空中→接地 の瞬間を覚えておき、しばらく膝を曲げさせる
+      if (m.lastState !== c.state) {
+        if (c.state === 'ground' && m.lastState === 'drop') m.landAt = c.animT || 0;
+        m.lastState = c.state;
+      }
+      const landK = m.landAt != null
+        ? clamp(1 - ((c.animT || 0) - m.landAt) / 0.5, 0, 1) : 0;
+      const P = Model3D.animate(poseBox, c, (c.animT || 0) + m.t, { aiming, armed: !!wcls, landK });
       const sk = Model3D.solve(P, build, 1, skel);
       if (wcls) Model3D.poseWeapon(sk, this.holdOpts(c, aiming, false));
+      skel._owner = c;            // 銃口の位置を後から引けるように、誰の姿勢かを覚える
 
       /* --- 2. 光をキャラ空間へ回す（面ごとに回さないで済むように） --- */
       const ang = c.ang || 0;
@@ -135,6 +181,8 @@
       const lx = L[0] * ca + L[1] * sa, ly = L[0] * sa - L[1] * ca, lz = L[2];
 
       /* --- 3. 頂点を作って投影する --- */
+      const fogRGB = this._fogRGB(R);
+      const fogQ = clamp((proj.depth - 7) / 30, 0, R.floorGrid ? 0.42 : 0.55);
       const det = cam.planeX * cam.dirY - cam.dirX * cam.planeY;
       if (!det) return null;
       const inv = 1 / det;
@@ -143,7 +191,15 @@
 
       let n = 0, np = 0;
       let minX = 1e9, maxX = -1e9, minY = 1e9, maxY = -1e9;
-      _colTable.length = 0;
+      _lutTable.length = 0;
+
+      // 視線方向（キャラ空間）とハーフベクトル。ハイライトに使う
+      const vdx0 = cam.x - c.x, vdy0 = cam.y - c.y;
+      const vl = Math.hypot(vdx0, vdy0) || 1;
+      const vx = (vdx0 * ca + vdy0 * sa) / vl, vy = (vdx0 * sa - vdy0 * ca) / vl, vz = 0.30;
+      let hx = lx + vx, hy = ly + vy, hz = lz + vz;
+      const hl = Math.hypot(hx, hy, hz) || 1;
+      hx /= hl; hy /= hl; hz /= hl;
 
       for (let pi = 0; pi < parts.length && np < MAXP; pi++) {
         const pt = parts[pi];
@@ -153,43 +209,71 @@
         const rg = RG.ring(sides);
         const a = pt.a, bb = pt.b;
         const dx = bb[0] - a[0], dy = bb[1] - a[1], dz = bb[2] - a[2];
+        const alen = Math.hypot(dx, dy, dz) || 1e-5;
+        const adx = dx / alen, ady = dy / alen, adz = dz / alen;
         const ax = RG.crossAxes(dx, dy, dz);
+        const prof = pt.prof;
+        const K = prof ? prof.length : 2;
         const base = n;
-        if (n + sides * 2 > MAXV) break;
+        if (n + sides * K > MAXV) break;
 
-        // 断面の2軸（骨ローカル）
         const e1 = [0, 0, 0], e2 = [0, 0, 0];
         e1[ax[0]] = 1; e2[ax[1]] = 1;
 
-        for (let r = 0; r < 2; r++) {
-          const cxl = r ? bb[0] : a[0], cyl = r ? bb[1] : a[1], czl = r ? bb[2] : a[2];
-          const ra = r ? pt.r1[0] : pt.r0[0], rb = r ? pt.r1[1] : pt.r0[1];
+        const mt = RG.MAT[pt.mat] || RG.MAT.cloth;
+        const aoK = pt.ao != null ? pt.ao : 1;
+        const nrm = b.m;
+
+        for (let k = 0; k < K; k++) {
+          const t = prof ? prof[k][0] : k;
+          const ps = prof ? prof[k][1] : 1, pd = prof ? prof[k][2] : 1;
+          const cxl = a[0] + dx * t, cyl = a[1] + dy * t, czl = a[2] + dz * t;
+          const ra = (pt.r0[0] + (pt.r1[0] - pt.r0[0]) * t) * ps;
+          const rb = (pt.r0[1] + (pt.r1[1] - pt.r0[1]) * t) * pd;
+          // 輪郭の傾き。これを法線に混ぜると、丸みが陰影として出る
+          let slope = 0;
+          if (K > 2) {
+            const k0 = Math.max(0, k - 1), k1 = Math.min(K - 1, k + 1);
+            const t0 = prof[k0][0], t1 = prof[k1][0];
+            const r0m = ((pt.r0[0] + (pt.r1[0] - pt.r0[0]) * t0) * prof[k0][1]
+              + (pt.r0[1] + (pt.r1[1] - pt.r0[1]) * t0) * prof[k0][2]) * 0.5;
+            const r1m = ((pt.r0[0] + (pt.r1[0] - pt.r0[0]) * t1) * prof[k1][1]
+              + (pt.r0[1] + (pt.r1[1] - pt.r0[1]) * t1) * prof[k1][2]) * 0.5;
+            slope = (r1m - r0m) / (Math.max(1e-4, (t1 - t0)) * alen);
+          }
           for (let i = 0; i < sides; i++) {
             const co = rg[i * 2], si = rg[i * 2 + 1];
             _v0[0] = cxl + e1[0] * ra * co + e2[0] * rb * si;
             _v0[1] = cyl + e1[1] * ra * co + e2[1] * rb * si;
             _v0[2] = czl + e1[2] * ra * co + e2[2] * rb * si;
             Model3D.boneToChar(sk, pt.bone, _v0, build, 1, _v1);
-            const idx = base + r * sides + i;
+            const idx = base + k * sides + i;
             _cx[idx] = _v1[0]; _cy[idx] = _v1[1]; _cz[idx] = _v1[2];
-            // 法線（断面の外向き）もキャラ空間へ
-            _v2[0] = e1[0] * co + e2[0] * si; _v2[1] = e1[1] * co + e2[1] * si; _v2[2] = e1[2] * co + e2[2] * si;
-            const nrm = b.m;
-            _nx[idx] = nrm[0] * _v2[0] + nrm[1] * _v2[1] + nrm[2] * _v2[2];
-            _ny[idx] = nrm[3] * _v2[0] + nrm[4] * _v2[1] + nrm[5] * _v2[2];
-            _nz[idx] = nrm[6] * _v2[0] + nrm[7] * _v2[1] + nrm[8] * _v2[2];
+            // 断面の外向き（楕円なので半径で割る）に、輪郭の傾きを足す
+            const un0 = co / (ra || 1e-4), un1 = si / (rb || 1e-4);
+            let lnx = e1[0] * un0 + e2[0] * un1 - adx * slope * 0;
+            let lny = e1[1] * un0 + e2[1] * un1;
+            let lnz = e1[2] * un0 + e2[2] * un1;
+            let ll = Math.hypot(lnx, lny, lnz) || 1;
+            lnx = lnx / ll - adx * slope; lny = lny / ll - ady * slope; lnz = lnz / ll - adz * slope;
+            ll = Math.hypot(lnx, lny, lnz) || 1;
+            lnx /= ll; lny /= ll; lnz /= ll;
+            const wnx = nrm[0] * lnx + nrm[1] * lny + nrm[2] * lnz;
+            const wny = nrm[3] * lnx + nrm[4] * lny + nrm[5] * lnz;
+            const wnz = nrm[6] * lnx + nrm[7] * lny + nrm[8] * lnz;
+            _nx[idx] = wnx; _ny[idx] = wny; _nz[idx] = wnz;
+            _lm[idx] = this.lightVertex(wnx, wny, wnz, lx, ly, lz, hx, hy, hz, mt, aoK);
           }
         }
-        n = base + sides * 2;
-        // 蓋の中心（キャップ用）
-        for (let r = 0; r < 2; r++) {
-          _v0[0] = r ? bb[0] : a[0]; _v0[1] = r ? bb[1] : a[1]; _v0[2] = r ? bb[2] : a[2];
-          Model3D.boneToChar(sk, pt.bone, _v0, build, 1, _v1);
-          _cx[n + r] = _v1[0]; _cy[n + r] = _v1[1]; _cz[n + r] = _v1[2];
-        }
-        _pBase[np] = base; _pIdx[np] = pi;
-        _pCol[np] = _colTable.length;
-        _colTable.push(m.colors[pt.col] || m.colors.main);
+        n = base + sides * K;
+        // 蓋（平面）の明るさは軸方向の法線で1回だけ求める
+        const cnx = nrm[0] * adx + nrm[1] * ady + nrm[2] * adz;
+        const cny = nrm[3] * adx + nrm[4] * ady + nrm[5] * adz;
+        const cnz = nrm[6] * adx + nrm[7] * ady + nrm[8] * adz;
+        _pCapA[np] = this.lightVertex(-cnx, -cny, -cnz, lx, ly, lz, hx, hy, hz, mt, aoK);
+        _pCapB[np] = this.lightVertex(cnx, cny, cnz, lx, ly, lz, hx, hy, hz, mt, aoK);
+        _pBase[np] = base; _pIdx[np] = pi; _pRings[np] = K;
+        _lutTable.push(RG.lutFor(m.colors[pt.col] || m.colors.main, pt.mat, fogQ, fogRGB));
         np++;
       }
 
@@ -217,8 +301,9 @@
       const pad = 1;
       let bx = Math.floor(minX) - pad, by = Math.floor(minY) - pad;
       let bw = Math.ceil(maxX) - bx + pad * 2, bh = Math.ceil(maxY) - by + pad * 2;
-      // 近すぎる相手でコストが跳ねないよう、内部解像度に上限を設ける
-      const CAP = 176;
+      // 近すぎる相手でコストが跳ねないよう、内部解像度に上限を設ける。
+      // 近距離は上限を上げてジャギを減らす（遠いほど粗くてよい）
+      const CAP = lod === 0 ? 216 : (lod === 1 ? 150 : 100);
       let ds = 1;
       if (bw > CAP || bh > CAP) ds = Math.min(CAP / bw, CAP / bh);
       const rw = Math.max(1, Math.round(bw * ds)), rh = Math.max(1, Math.round(bh * ds));
@@ -226,46 +311,44 @@
       RB.begin(rw, rh);
       const t0 = RB.tris;
 
-      const fogRGB = this._fogRGB(R);
       const tint = o.tint || null;
-      const fog = clamp((proj.depth - 4) / 26, 0, R.floorGrid ? 0.42 : 0.55);
-      const amb = this.ambient, dif = this.diffuse;
 
       let faceN = 0;
-      const emit = (i0, i1, i2, i3, ni, rgb) => {
+      // スムースシェーディング。頂点ごとの明るさを補間して材質の色見本を引く
+      const emit = (i0, i1, i2, i3, lut, la, lb2, lc, ld) => {
         if (!_ok[i0] || !_ok[i1] || !_ok[i2] || (i3 >= 0 && !_ok[i3])) return;
         const x0 = (_sx[i0] - bx) * ds, y0 = (_sy[i0] - by) * ds;
         const x1 = (_sx[i1] - bx) * ds, y1 = (_sy[i1] - by) * ds;
         const x2 = (_sx[i2] - bx) * ds, y2 = (_sy[i2] - by) * ds;
-        // 表裏判定（画面上の向きで裏面を落とす）
-        if ((x1 - x0) * (y2 - y0) - (x2 - x0) * (y1 - y0) <= 0) return;
+        if ((x1 - x0) * (y2 - y0) - (x2 - x0) * (y1 - y0) <= 0) return;   // 裏面
         faceN++;
-        let l = _nx[ni] * lx + _ny[ni] * ly + _nz[ni] * lz;
-        l = amb + (l > 0 ? l * dif : l * 0.10);
-        const col = tint
-          ? Raster3D.shade32(tint.rgb, l * (1 - tint.k) + tint.k * 1.25, fog * 0.4, fogRGB)
-          : Raster3D.shade32(rgb, l, fog, fogRGB);
-        _pa[0] = x0; _pa[1] = y0; _pa[2] = _sw[i0];
-        _pb[0] = x1; _pb[1] = y1; _pb[2] = _sw[i1];
-        _pc[0] = x2; _pc[1] = y2; _pc[2] = _sw[i2];
+        _pa[0] = x0; _pa[1] = y0; _pa[2] = _sw[i0]; _pa[3] = la;
+        _pb[0] = x1; _pb[1] = y1; _pb[2] = _sw[i1]; _pb[3] = lb2;
+        _pc[0] = x2; _pc[1] = y2; _pc[2] = _sw[i2]; _pc[3] = lc;
         if (i3 >= 0) {
-          _pd[0] = (_sx[i3] - bx) * ds; _pd[1] = (_sy[i3] - by) * ds; _pd[2] = _sw[i3];
-          RB.quad(_pa, _pb, _pc, _pd, col);
-        } else RB.tri(_pa, _pb, _pc, col);
+          _pd[0] = (_sx[i3] - bx) * ds; _pd[1] = (_sy[i3] - by) * ds; _pd[2] = _sw[i3]; _pd[3] = ld;
+          RB.quadS(_pa, _pb, _pc, _pd, lut);
+        } else RB.triS(_pa, _pb, _pc, lut);
       };
 
       for (let k = 0; k < np; k++) {
         const pt = parts[_pIdx[k]];
-        const sides = pt.sides, base = _pBase[k];
-        const rgb = Raster3D.hexRGB(_colTable[_pCol[k]]);
-        for (let i = 0; i < sides; i++) {
-          const j = (i + 1) % sides;
-          emit(base + i, base + j, base + sides + j, base + sides + i, base + i, rgb);
+        const sides = pt.sides, base = _pBase[k], K = _pRings[k];
+        let lut = _lutTable[k];
+        if (tint) lut = this.tintLut(lut, tint);
+        for (let r = 0; r < K - 1; r++) {
+          const o0 = base + r * sides, o1 = base + (r + 1) * sides;
+          for (let i = 0; i < sides; i++) {
+            const j = (i + 1) % sides;
+            emit(o0 + i, o0 + j, o1 + j, o1 + i, lut, _lm[o0 + i], _lm[o0 + j], _lm[o1 + j], _lm[o1 + i]);
+          }
         }
-        // 蓋は角の1点からの扇。中心頂点を持たないぶん三角形が2枚少ない
+        // 蓋（両端）。平面なので明るさは一定
+        const la = _pCapA[k], lb2 = _pCapB[k];
+        const top = base + (K - 1) * sides;
         for (let i = 1; i < sides - 1; i++) {
-          emit(base, base + i, base + i + 1, -1, base + i, rgb);
-          emit(base + sides, base + sides + i + 1, base + sides + i, -1, base + sides + i, rgb);
+          emit(base, base + i, base + i + 1, -1, lut, la, la, la, la);
+          emit(top, top + i + 1, top + i, -1, lut, lb2, lb2, lb2, lb2);
         }
       }
 
@@ -332,9 +415,18 @@
     /** 銃口の世界座標（マズルフラッシュ用）。直前の draw のポーズを使う */
     muzzleWorld(c, out) {
       const wcls = this.weaponClass(c);
-      if (!wcls || !skel.weapon) return null;
+      if (!wcls) return null;
       const m = c._m3;
       if (!m) return null;
+      // 直前に解いた姿勢が別のキャラのものなら、この場で解き直す
+      if (skel._owner !== c) {
+        const aiming = this.isAiming(c);
+        const P = Model3D.animate(poseBox, c, (c.animT || 0) + m.t, { aiming, armed: true });
+        Model3D.solve(P, m.def.build, 1, skel);
+        Model3D.poseWeapon(skel, this.holdOpts(c, aiming, false));
+        skel._owner = c;
+      }
+      if (!skel.weapon) return null;
       const mz = Model3D.weaponParts(wcls, 'weapon').muzzle;
       Model3D.boneToChar(skel, 'weapon', mz, 1, 1, _v2);
       const hW = (c.def ? c.def.height : 0.95) * 1.06 * m.def.height;
@@ -449,25 +541,53 @@
 
       const D = cam.D * this.vmFov, halfW = W / 2, midY = H / 2;
       const NEAR = 0.05;
+      const RG = Raster3D;
+      // 一人称は自分の武器がよく見えるよう、少し正面寄りから照らす
+      const lx = 0.34, ly = 0.50, lz = 0.79;
+      let hx = lx + 1, hy = ly, hz = lz + 0.2;
+      const hl = Math.hypot(hx, hy, hz); hx /= hl; hy /= hl; hz /= hl;
+
       let n = 0, np = 0;
       let minX = 1e9, maxX = -1e9, minY = 1e9, maxY = -1e9;
-      _colTable.length = 0;
+      _lutTable.length = 0;
 
       for (let pi = 0; pi < parts.length && np < MAXP; pi++) {
         const pt = parts[pi];
         if (hideArms && pt.col === 'sleeve') continue;   // 覗いている間は袖を出さない
         const sides = pt.sides;
-        const rg = Raster3D.ring(sides);
+        const rg = RG.ring(sides);
         const a = pt.a, bb = pt.b;
-        const ax = Raster3D.crossAxes(bb[0] - a[0], bb[1] - a[1], bb[2] - a[2]);
+        const dx = bb[0] - a[0], dy = bb[1] - a[1], dz = bb[2] - a[2];
+        const alen = Math.hypot(dx, dy, dz) || 1e-5;
+        const adx = dx / alen, ady = dy / alen, adz = dz / alen;
+        const ax = RG.crossAxes(dx, dy, dz);
+        const prof = pt.prof;
+        const K = prof ? prof.length : 2;
         const base = n;
-        if (n + sides * 2 > MAXV) break;
+        if (n + sides * K > MAXV) break;
         const e1 = [0, 0, 0], e2 = [0, 0, 0];
         e1[ax[0]] = 1; e2[ax[1]] = 1;
+        const mt = RG.MAT[pt.mat] || RG.MAT.cloth;
+        const aoK = pt.ao != null ? pt.ao : 1;
+        const nm = vm.m;
         let bad = false;
-        for (let r = 0; r < 2 && !bad; r++) {
-          const cxl = r ? bb[0] : a[0], cyl = r ? bb[1] : a[1], czl = r ? bb[2] : a[2];
-          const ra = r ? pt.r1[0] : pt.r0[0], rb = r ? pt.r1[1] : pt.r0[1];
+
+        for (let k = 0; k < K && !bad; k++) {
+          const t = prof ? prof[k][0] : k;
+          const ps = prof ? prof[k][1] : 1, pd = prof ? prof[k][2] : 1;
+          const cxl = a[0] + dx * t, cyl = a[1] + dy * t, czl = a[2] + dz * t;
+          const ra = (pt.r0[0] + (pt.r1[0] - pt.r0[0]) * t) * ps;
+          const rb = (pt.r0[1] + (pt.r1[1] - pt.r0[1]) * t) * pd;
+          let slope = 0;
+          if (K > 2) {
+            const k0 = Math.max(0, k - 1), k1 = Math.min(K - 1, k + 1);
+            const t0 = prof[k0][0], t1 = prof[k1][0];
+            const r0m = ((pt.r0[0] + (pt.r1[0] - pt.r0[0]) * t0) * prof[k0][1]
+              + (pt.r0[1] + (pt.r1[1] - pt.r0[1]) * t0) * prof[k0][2]) * 0.5;
+            const r1m = ((pt.r0[0] + (pt.r1[0] - pt.r0[0]) * t1) * prof[k1][1]
+              + (pt.r0[1] + (pt.r1[1] - pt.r0[1]) * t1) * prof[k1][2]) * 0.5;
+            slope = (r1m - r0m) / (Math.max(1e-4, (t1 - t0)) * alen);
+          }
           for (let i = 0; i < sides; i++) {
             const co = rg[i * 2], si = rg[i * 2 + 1];
             _v0[0] = cxl + e1[0] * ra * co + e2[0] * rb * si;
@@ -476,27 +596,38 @@
             Model3D.boneToChar(skelVM, 'vm', _v0, 1, 1, _v1);
             const vx = _v1[0], vy = _v1[1], vz = _v1[2];
             if (vx <= NEAR) { bad = true; break; }
-            const idx = base + r * sides + i;
+            const idx = base + k * sides + i;
             _sx[idx] = halfW - vy * D / vx;
             _sy[idx] = midY - vz * D / vx;
             _sw[idx] = 1 / vx;
             _ok[idx] = 1;
-            _v2[0] = e1[0] * co + e2[0] * si; _v2[1] = e1[1] * co + e2[1] * si; _v2[2] = e1[2] * co + e2[2] * si;
-            const nm = vm.m;
-            _nx[idx] = nm[0] * _v2[0] + nm[1] * _v2[1] + nm[2] * _v2[2];
-            _ny[idx] = nm[3] * _v2[0] + nm[4] * _v2[1] + nm[5] * _v2[2];
-            _nz[idx] = nm[6] * _v2[0] + nm[7] * _v2[1] + nm[8] * _v2[2];
+            const un0 = co / (ra || 1e-4), un1 = si / (rb || 1e-4);
+            let lnx = e1[0] * un0 + e2[0] * un1;
+            let lny = e1[1] * un0 + e2[1] * un1;
+            let lnz = e1[2] * un0 + e2[2] * un1;
+            let ll = Math.hypot(lnx, lny, lnz) || 1;
+            lnx = lnx / ll - adx * slope; lny = lny / ll - ady * slope; lnz = lnz / ll - adz * slope;
+            ll = Math.hypot(lnx, lny, lnz) || 1;
+            lnx /= ll; lny /= ll; lnz /= ll;
+            const wnx = nm[0] * lnx + nm[1] * lny + nm[2] * lnz;
+            const wny = nm[3] * lnx + nm[4] * lny + nm[5] * lnz;
+            const wnz = nm[6] * lnx + nm[7] * lny + nm[8] * lnz;
+            _lm[idx] = this.lightVertex(wnx, wny, wnz, lx, ly, lz, hx, hy, hz, mt, aoK);
           }
         }
         if (bad) continue;
-        for (let i = base; i < base + sides * 2; i++) {
+        for (let i = base; i < base + sides * K; i++) {
           if (_sx[i] < minX) minX = _sx[i]; if (_sx[i] > maxX) maxX = _sx[i];
           if (_sy[i] < minY) minY = _sy[i]; if (_sy[i] > maxY) maxY = _sy[i];
         }
-        n = base + sides * 2;
-        _pBase[np] = base; _pIdx[np] = pi;
-        _pCol[np] = _colTable.length;
-        _colTable.push(m.colors[pt.col] || m.colors.main);
+        n = base + sides * K;
+        const cnx = nm[0] * adx + nm[1] * ady + nm[2] * adz;
+        const cny = nm[3] * adx + nm[4] * ady + nm[5] * adz;
+        const cnz = nm[6] * adx + nm[7] * ady + nm[8] * adz;
+        _pCapA[np] = this.lightVertex(-cnx, -cny, -cnz, lx, ly, lz, hx, hy, hz, mt, aoK);
+        _pCapB[np] = this.lightVertex(cnx, cny, cnz, lx, ly, lz, hx, hy, hz, mt, aoK);
+        _pBase[np] = base; _pIdx[np] = pi; _pRings[np] = K;
+        _lutTable.push(RG.lutFor(m.colors[pt.col] || m.colors.main, pt.mat, 0, null));
         np++;
       }
       if (!np || minX > maxX) return false;
@@ -504,42 +635,42 @@
       const bx = Math.max(-2, Math.floor(minX) - 1), by = Math.max(-2, Math.floor(minY) - 1);
       const bw = Math.min(W + 4, Math.ceil(maxX) + 1) - bx, bh = Math.min(H + 4, Math.ceil(maxY) + 1) - by;
       if (bw <= 0 || bh <= 0) return false;
-      const CAP = 320;
+      const CAP = 360;
       let ds = 1;
       if (bw > CAP || bh > CAP) ds = Math.min(CAP / bw, CAP / bh);
       const rw = Math.max(1, Math.round(bw * ds)), rh = Math.max(1, Math.round(bh * ds));
       const RB = Raster3D.R3;
       RB.begin(rw, rh);
 
-      const amb = this.ambient + 0.14, dif = this.diffuse;
-      const lx = 0.40, ly = 0.52, lz = 0.75;
+      const emit = (i0, i1, i2, i3, lut, la, lb2, lc, ld) => {
+        if (!_ok[i0] || !_ok[i1] || !_ok[i2] || (i3 >= 0 && !_ok[i3])) return;
+        const x0 = (_sx[i0] - bx) * ds, y0 = (_sy[i0] - by) * ds;
+        const x1 = (_sx[i1] - bx) * ds, y1 = (_sy[i1] - by) * ds;
+        const x2 = (_sx[i2] - bx) * ds, y2 = (_sy[i2] - by) * ds;
+        if ((x1 - x0) * (y2 - y0) - (x2 - x0) * (y1 - y0) <= 0) return;
+        _pa[0] = x0; _pa[1] = y0; _pa[2] = _sw[i0]; _pa[3] = la;
+        _pb[0] = x1; _pb[1] = y1; _pb[2] = _sw[i1]; _pb[3] = lb2;
+        _pc[0] = x2; _pc[1] = y2; _pc[2] = _sw[i2]; _pc[3] = lc;
+        if (i3 >= 0) {
+          _pd[0] = (_sx[i3] - bx) * ds; _pd[1] = (_sy[i3] - by) * ds; _pd[2] = _sw[i3]; _pd[3] = ld;
+          RB.quadS(_pa, _pb, _pc, _pd, lut);
+        } else RB.triS(_pa, _pb, _pc, lut);
+      };
       for (let k = 0; k < np; k++) {
         const pt = parts[_pIdx[k]];
-        const sides = pt.sides, base = _pBase[k];
-        const rgb = Raster3D.hexRGB(_colTable[_pCol[k]]);
-        const face = (i0, i1, i2, i3, ni) => {
-          const x0 = (_sx[i0] - bx) * ds, y0 = (_sy[i0] - by) * ds;
-          const x1 = (_sx[i1] - bx) * ds, y1 = (_sy[i1] - by) * ds;
-          const x2 = (_sx[i2] - bx) * ds, y2 = (_sy[i2] - by) * ds;
-          if ((x1 - x0) * (y2 - y0) - (x2 - x0) * (y1 - y0) <= 0) return;
-          let l = _nx[ni] * lx + _ny[ni] * ly + _nz[ni] * lz;
-          l = amb + (l > 0 ? l * dif : l * 0.12);
-          const col = Raster3D.shade32(rgb, l, 0, null);
-          _pa[0] = x0; _pa[1] = y0; _pa[2] = _sw[i0];
-          _pb[0] = x1; _pb[1] = y1; _pb[2] = _sw[i1];
-          _pc[0] = x2; _pc[1] = y2; _pc[2] = _sw[i2];
-          if (i3 >= 0) {
-            _pd[0] = (_sx[i3] - bx) * ds; _pd[1] = (_sy[i3] - by) * ds; _pd[2] = _sw[i3];
-            RB.quad(_pa, _pb, _pc, _pd, col);
-          } else RB.tri(_pa, _pb, _pc, col);
-        };
-        for (let i = 0; i < sides; i++) {
-          const j = (i + 1) % sides;
-          face(base + i, base + j, base + sides + j, base + sides + i, base + i);
+        const sides = pt.sides, base = _pBase[k], K = _pRings[k];
+        const lut = _lutTable[k];
+        for (let r = 0; r < K - 1; r++) {
+          const o0 = base + r * sides, o1 = base + (r + 1) * sides;
+          for (let i = 0; i < sides; i++) {
+            const j = (i + 1) % sides;
+            emit(o0 + i, o0 + j, o1 + j, o1 + i, lut, _lm[o0 + i], _lm[o0 + j], _lm[o1 + j], _lm[o1 + i]);
+          }
         }
+        const la = _pCapA[k], lb2 = _pCapB[k], top = base + (K - 1) * sides;
         for (let i = 1; i < sides - 1; i++) {
-          face(base, base + i, base + i + 1, -1, base + i);
-          face(base + sides, base + sides + i + 1, base + sides + i, -1, base + sides + i);
+          emit(base, base + i, base + i + 1, -1, lut, la, la, la, la);
+          emit(top, top + i + 1, top + i, -1, lut, lb2, lb2, lb2, lb2);
         }
       }
       R.ctx.drawImage(RB.flush(), 0, 0, rw, rh, bx, by, bw, bh);
@@ -568,20 +699,38 @@
       return this._fog;
     },
 
-    /** 足元の接地影。立体感を出すのに一番効く割に軽い */
+    /**
+     * 足元の接地影。ぼかした楕円で「地面に立っている」感じを出す。
+     * 姿勢（立ち/しゃがみ/伏せ）と落下高度で大きさと濃さを変える。
+     */
     shadow(R, c, proj) {
       const ctx = R.ctx, cam = R.cam;
-      if (proj.depth > 22) return;
+      if (proj.depth > 24) return;
       if (R.zAt(proj.sx) < proj.depth) return;
       const lineH = proj.lineH;
       const y = cam.horizon + cam.eyeZ * lineH;
-      const w = lineH * 0.26, h = w * 0.30;
+      const st = c.stance || 'stand';
+      const spread = st === 'prone' ? 0.46 : (st === 'crouch' ? 0.30 : 0.25);
+      const air = c.state === 'drop' ? clamp(1 - (c.z || 0) / 12, 0, 1) : 1;
+      const w = lineH * spread * (0.8 + air * 0.2);
+      const h = w * (st === 'prone' ? 0.34 : 0.30);
       if (w < 1.5) return;
+      const a = clamp(0.34 - proj.depth * 0.007, 0.06, 0.34) * (0.35 + air * 0.65);
+      // グラデーションは1度だけ作り、濃さは globalAlpha で変える
+      if (!this._shGrad) {
+        const gr = ctx.createRadialGradient(0, 0, 0, 0, 0, 1);
+        gr.addColorStop(0, 'rgba(12,18,14,1)');
+        gr.addColorStop(0.55, 'rgba(12,18,14,0.72)');
+        gr.addColorStop(1, 'rgba(12,18,14,0)');
+        this._shGrad = gr;
+      }
       ctx.save();
-      ctx.globalAlpha = clamp(0.30 - proj.depth * 0.008, 0.05, 0.30);
-      ctx.fillStyle = '#000';
+      ctx.globalAlpha = a;
+      ctx.translate(proj.sx, y);
+      ctx.scale(w, h);
+      ctx.fillStyle = this._shGrad;
       ctx.beginPath();
-      ctx.ellipse(proj.sx, y, w, h, 0, 0, 7);
+      ctx.arc(0, 0, 1, 0, Math.PI * 2);
       ctx.fill();
       ctx.restore();
     },

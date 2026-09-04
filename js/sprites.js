@@ -43,7 +43,91 @@
    *  WALL TEXTURES — 64x64, 4 variants, tinted by stage theme
    * ----------------------------------------------------------------*/
   function makeWallTextures(theme) {
+    if (theme && theme.texStyle === 'br') return makeWallTexturesBR(theme);
     return API.style === 'pop' ? makeWallTexturesPop(theme) : makeWallTexturesMil(theme);
+  }
+
+  /* =========================================================================
+   * LAST ISLAND 用の壁テクスチャ。
+   * 1=建物(コンクリート+窓) 2=木/茂み 3=木箱 4=水
+   * のっぺりした単色にならないよう、材質ごとのむらと、
+   * 下側を暗く落とす簡易AOを焼き込んでいる。
+   * ======================================================================= */
+  function makeWallTexturesBR(theme) {
+    const T = 64, out = [];
+    const noise = (x, n, a, dark) => {
+      x.globalAlpha = a;
+      for (let i = 0; i < n; i++) {
+        x.fillStyle = Math.random() < 0.5 ? (dark || '#000') : '#fff';
+        const w = 1 + ((Math.random() * 2) | 0);
+        x.fillRect((Math.random() * T) | 0, (Math.random() * T) | 0, w, w);
+      }
+      x.globalAlpha = 1;
+    };
+    for (let v = 0; v < 4; v++) {
+      const c = cvs(T, T), x = c.getContext('2d');
+      const base = theme.walls[v] || theme.walls[0];
+      x.fillStyle = base; x.fillRect(0, 0, T, T);
+
+      if (v === 0) {                       // 建物: コンクリート板と窓
+        x.fillStyle = shade(base, -12);
+        x.fillRect(0, 0, T, 3); x.fillRect(0, 30, T, 2);
+        x.fillStyle = shade(base, 12);
+        x.fillRect(0, 3, T, 2); x.fillRect(0, 32, T, 1);
+        // 窓（枠＋ガラス＋映り込み）
+        x.fillStyle = shade(base, -26); x.fillRect(9, 10, 46, 20);
+        x.fillStyle = '#2b3946'; x.fillRect(11, 12, 42, 16);
+        x.fillStyle = 'rgba(150,205,235,.55)';
+        x.beginPath(); x.moveTo(11, 28); x.lineTo(30, 12); x.lineTo(41, 12); x.lineTo(15, 28); x.closePath(); x.fill();
+        x.fillStyle = shade(base, -26); x.fillRect(31, 12, 2, 16);
+        // 下部の汚れ
+        x.fillStyle = 'rgba(60,50,40,.22)';
+        for (let i = 0; i < 5; i++) x.fillRect(4 + i * 13, 40 + ((i * 7) % 9), 6, 20);
+        noise(x, 260, 0.10);
+      } else if (v === 1) {                // 木・茂み
+        const dk = shade(base, -34), lt = shade(base, 26);
+        for (let i = 0; i < 34; i++) {     // 葉の塊
+          x.fillStyle = i % 3 === 0 ? dk : (i % 3 === 1 ? base : lt);
+          const r = 6 + Math.random() * 7;
+          x.beginPath(); x.arc(Math.random() * T, Math.random() * T, r, 0, 7); x.fill();
+        }
+        x.fillStyle = 'rgba(46,34,20,.75)';  // 枝
+        x.fillRect(27, 0, 9, T);
+        x.fillStyle = 'rgba(74,56,34,.6)'; x.fillRect(30, 0, 3, T);
+        noise(x, 300, 0.16);
+      } else if (v === 2) {                // 木箱
+        x.fillStyle = shade(base, -30); x.fillRect(0, 0, T, T);
+        for (let i = 0; i < 4; i++) {      // 板
+          x.fillStyle = shade(base, i % 2 ? 6 : -6);
+          x.fillRect(1, 1 + i * 16, 62, 14);
+          x.fillStyle = 'rgba(0,0,0,.16)';
+          for (let k2 = 0; k2 < 3; k2++) x.fillRect(4 + k2 * 20, 3 + i * 16, 14, 1);
+        }
+        x.fillStyle = shade(base, -42);    // 金具
+        x.fillRect(0, 0, 5, T); x.fillRect(59, 0, 5, T);
+        x.fillStyle = 'rgba(255,255,255,.16)';
+        x.fillRect(1, 0, 1, T); x.fillRect(60, 0, 1, T);
+        x.fillStyle = 'rgba(40,30,18,.7)'; // 釘
+        for (let i = 0; i < 4; i++) { x.fillRect(2, 6 + i * 16, 2, 2); x.fillRect(60, 6 + i * 16, 2, 2); }
+        noise(x, 200, 0.12);
+      } else {                             // 水
+        for (let i = 0; i < 10; i++) {
+          x.fillStyle = shade(base, i % 2 ? 16 : -14);
+          x.fillRect(0, i * 7, T, 4);
+        }
+        x.fillStyle = 'rgba(255,255,255,.30)';
+        for (let i = 0; i < 14; i++) x.fillRect((Math.random() * T) | 0, (Math.random() * T) | 0, 4 + Math.random() * 8, 1);
+        noise(x, 120, 0.10);
+      }
+      // 上端のハイライトと下端の落ち影（接地感）
+      const g2 = x.createLinearGradient(0, 0, 0, T);
+      g2.addColorStop(0, 'rgba(255,255,255,.10)');
+      g2.addColorStop(0.55, 'rgba(0,0,0,0)');
+      g2.addColorStop(1, 'rgba(0,0,0,.34)');
+      x.fillStyle = g2; x.fillRect(0, 0, T, T);
+      out.push(c);
+    }
+    return out;
   }
 
   /** POP: フラットな原色ブロック。上端に濃い縁を入れて壁の上辺が線として立つようにする */

@@ -636,6 +636,7 @@
       c.z = 0;
       c.state = 'ground';
       c.chute = false;
+      this.dustAt(c.x, c.y, 0.04, 10, 1.5);      // 着地の砂ぼこり
       // 水や壁の上に降りたら最寄りの地面へ寄せる
       const m = this.map;
       if (this.solidAt(c.x, c.y)) {
@@ -769,6 +770,16 @@
           if (!w || w.mag <= 0) c.burstLeft = 0;
           else if (c.burstT <= 0) { this.fire(c); c.burstLeft--; c.burstT = w.def.burstGap || 0.075; }
         }
+        // 走っている足元から小さな砂ぼこりを立てる（近くだけ）
+        if (c.moving && c.stance === 'stand') {
+          c._stepT = (c._stepT || 0) + dt * (c.sprinting ? 3.4 : 2.2);
+          if (c._stepT >= 1) {
+            c._stepT = 0;
+            if (U.dist2(c.x, c.y, this.player.x, this.player.y) < 900) {
+              this.dustAt(c.x, c.y, 0.02, c.sprinting ? 3 : 2, 0.5);
+            }
+          }
+        }
         if (!c.isPlayer) BRBot.update(c, this, dt);
       }
     },
@@ -835,6 +846,8 @@
 
     /** 範囲ダメージ。遮蔽の裏には届かない */
     explode(x, y, z, radius, dmg, src) {
+      this.dustAt(x, y, z, 14, 2.4, '#b9b0a2');
+      this.sparkAt(x, y, z, 10, '#ffb44a');
       const hits = [];
       for (let i = 0; i < this.combatants.length; i++) {
         const c = this.combatants[i];
@@ -907,7 +920,37 @@
       }
     },
 
+    /** 砂ぼこり。着地・足音・爆発に使う */
+    dustAt(x, y, z, n, spread, color) {
+      for (let i = 0; i < n; i++) {
+        const a = Math.random() * U.TAU, sp = U.rand(0.2, 1) * (spread || 1);
+        this.parts.push({
+          alive: true, kind: 'dust', x, y, z: z + U.rand(0, 0.06),
+          vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, vz: U.rand(0.15, 0.7),
+          size: U.rand(0.05, 0.11) * (spread || 1), color: color || '#cbb894',
+          alpha: U.rand(0.28, 0.5), life: U.rand(0.35, 0.8), maxLife: 0.8, grav: 0.8
+        });
+      }
+      this.trimParts();
+    },
+
+    /** 着弾の火花 */
+    sparkAt(x, y, z, n, color) {
+      for (let i = 0; i < n; i++) {
+        const a = Math.random() * U.TAU, sp = U.rand(1.2, 3.4);
+        this.parts.push({
+          alive: true, kind: 'spark', x, y, z,
+          vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, vz: U.rand(1.0, 3.2),
+          size: U.rand(0.02, 0.05), color: color || '#ffd08a',
+          life: U.rand(0.1, 0.26), maxLife: 0.26, grav: 7
+        });
+      }
+      this.trimParts();
+    },
+
     impact(x, y, z, color) {
+      this.sparkAt(x, y, z, 4, color || '#ffd9a0');
+      this.dustAt(x, y, z, 2, 0.45, '#d8cdb6');
       for (let i = 0; i < 5; i++) {
         const a = Math.random() * U.TAU, s = U.rand(0.5, 2.0);
         this.parts.push({

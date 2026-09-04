@@ -60,49 +60,285 @@
    *   a→b の間を、断面 r0→r1 の N角柱で埋める。
    *   col は palette のキー。sides=4 で箱、6 で腕脚、8 で頭。
    * ===================================================================== */
+  /**
+   * 部品ひとつ。a→b を軸に、断面 r0→r1 の筒を作る。
+   * opt.prof を渡すと「ろくろ挽き」になり、輪郭に丸みや膨らみを付けられる。
+   *   prof: [[t, 横倍率, 奥行倍率], ...]  t は a=0, b=1
+   * opt.mat は材質名（skin / cloth / metal / polymer / rubber / glass / hair / gear）
+   */
   function part(bone, a, b, r0, r1, sides, col, opt) {
-    return Object.assign({ bone, a, b, r0, r1, sides, col }, opt || {});
+    return Object.assign({ bone, a, b, r0, r1, sides, col, mat: 'cloth' }, opt || {});
   }
 
-  /** 素体。体格(build)と身長は描画時に係数で効かせる */
-  function bodyParts() {
-    return [
-      // 胴。腰でくびれ、胸で広がるようにして「板」に見せない
-      part('pelvis', [0, 0, -0.050], [0, 0, 0.050], [0.072, 0.094], [0.064, 0.084], 8, 'pants'),
-      part('spine', [0, 0, -0.012], [0, 0, 0.100], [0.062, 0.082], [0.072, 0.100], 8, 'main'),
-      part('chest', [0, 0, -0.005], [0, 0, 0.088], [0.076, 0.106], [0.062, 0.088], 8, 'main'),
-      part('neck', [-0.004, 0, -0.015], [-0.004, 0, 0.048], [0.034, 0.036], [0.034, 0.038], 6, 'skin'),
-      // 頭。顎→頭蓋→頭頂の3段。少し大きめにして小さな画面でも顔の向きが分かるように
-      part('head', [0.004, 0, -0.005], [-0.004, 0, 0.048], [0.052, 0.055], [0.068, 0.071], 8, 'skin'),
-      part('head', [-0.004, 0, 0.048], [-0.006, 0, 0.112], [0.068, 0.071], [0.070, 0.073], 8, 'skin'),
-      part('head', [-0.006, 0, 0.112], [-0.004, 0, 0.150], [0.070, 0.073], [0.040, 0.046], 8, 'skin'),
-      part('head', [0.052, 0, 0.060], [0.070, 0, 0.056], [0.026, 0.044], [0.014, 0.030], 6, 'skin'), // 鼻梁
-      part('head', [0.040, 0, 0.006], [0.058, 0, 0.014], [0.024, 0.038], [0.014, 0.026], 6, 'skin'), // 顎
+  /* --- よく使う輪郭 ------------------------------------------------------ */
+  /** 球（関節や頭の丸みに使う） */
+  function sphereProf(n) {
+    const p = [];
+    for (let i = 0; i < n; i++) {
+      const t = (i + 0.5) / n;
+      p.push([t, Math.sin(t * Math.PI), Math.sin(t * Math.PI)]);
+    }
+    return p;
+  }
+  const PROF = {
+    // 頭。顎→頬→こめかみ→頭頂 と丸く絞る
+    head: [[0.00, 0.40, 0.42], [0.18, 0.80, 0.83], [0.48, 1.00, 1.00],
+    [0.80, 0.90, 0.92], [1.00, 0.40, 0.44]],
+    // 胸。みぞおち→胸→肩へ広がる
+    chest: [[0.00, 0.90, 0.88], [0.45, 1.01, 1.02], [1.00, 0.92, 0.98]],
+    // 腹。腰でくびれる
+    waist: [[0.00, 1.00, 1.00], [0.45, 0.94, 0.94], [1.00, 1.00, 1.00]],
+    // 腰まわり
+    hip: [[0.00, 0.86, 0.88], [0.50, 1.00, 1.00], [1.00, 0.92, 0.94]],
+    // 上腕・太もも（付け根が太く、関節へ向けて締まる）
+    limbUp: [[0.00, 1.00, 1.00], [0.34, 1.02, 1.02], [1.00, 0.80, 0.80]],
+    // 前腕・すね
+    limbLo: [[0.00, 1.00, 1.00], [0.28, 1.04, 1.04], [1.00, 0.78, 0.80]],
+    sph3: sphereProf(3),
+    sph4: sphereProf(4),
+    sph5: sphereProf(5)
+  };
 
-      part('shoulderL', [0, -0.012, 0.014], [0, 0.030, -0.010], [0.044, 0.046], [0.036, 0.038], 6, 'main'),
-      part('armLU', [0, 0, 0.014], [0, 0, -0.148], [0.037, 0.038], [0.029, 0.030], 6, 'main'),
-      part('armLL', [0, 0, 0.004], [0, 0, -0.145], [0.029, 0.030], [0.023, 0.024], 6, 'skin'),
-      part('handL', [0, 0, 0], [0.006, 0, -0.050], [0.025, 0.021], [0.021, 0.017], 6, 'skin'),
-
-      part('shoulderR', [0, 0.012, 0.014], [0, -0.030, -0.010], [0.044, 0.046], [0.036, 0.038], 6, 'main'),
-      part('armRU', [0, 0, 0.014], [0, 0, -0.148], [0.037, 0.038], [0.029, 0.030], 6, 'main'),
-      part('armRL', [0, 0, 0.004], [0, 0, -0.145], [0.029, 0.030], [0.023, 0.024], 6, 'skin'),
-      part('handR', [0, 0, 0], [0.006, 0, -0.050], [0.025, 0.021], [0.021, 0.017], 6, 'skin'),
-
-      part('legLU', [0, 0, 0.030], [0, 0, -0.218], [0.055, 0.058], [0.042, 0.044], 6, 'pants'),
-      part('legLL', [0, 0, 0.006], [0, 0, -0.208], [0.042, 0.044], [0.030, 0.032], 6, 'pants'),
-      part('footL', [-0.024, 0, -0.014], [0.062, 0, -0.022], [0.030, 0.034], [0.024, 0.028], 6, 'boot'),
-
-      part('legRU', [0, 0, 0.030], [0, 0, -0.218], [0.055, 0.058], [0.042, 0.044], 6, 'pants'),
-      part('legRL', [0, 0, 0.006], [0, 0, -0.208], [0.042, 0.044], [0.030, 0.032], 6, 'pants'),
-      part('footR', [-0.024, 0, -0.014], [0.062, 0, -0.022], [0.030, 0.034], [0.024, 0.028], 6, 'boot')
-    ];
+  /** 球状の部品（関節・耳・目など） */
+  function ball(bone, c, rx, ry, rz, sides, col, mat, prof) {
+    return part(bone, [c[0], c[1], c[2] - rz], [c[0], c[1], c[2] + rz],
+      [rx, ry], [rx, ry], sides, col, { prof: prof || PROF.sph4, mat: mat || 'skin' });
   }
 
   /**
-   * 一人称で描くぶんの腕。肘まで描くとカメラに近すぎて画面を覆うので、
-   * 手首から先＋手袋だけを出す（FPSのビューモデルの定石）。
+   * 素体。体格(build)と身長は描画時に係数で効かせる。
+   * 「棒をつないだだけ」に見せないため、
+   *   ・胴と手足は輪郭(prof)を持つろくろ形状
+   *   ・肩/肘/手首/股/膝/足首に関節の丸みを入れる
+   *   ・頭は顎から頭頂までひと続きの卵形
+   * にしている。
    */
+  function bodyParts() {
+    const P = [];
+    /* ---- 胴 ---- */
+    P.push(part('pelvis', [0, 0, -0.052], [0, 0, 0.050], [0.074, 0.096], [0.066, 0.086], 6, 'pants', { prof: PROF.hip, mat: 'cloth' }));
+    P.push(part('spine', [0, 0, -0.014], [0, 0, 0.100], [0.064, 0.084], [0.074, 0.101], 6, 'main', { prof: PROF.waist, mat: 'cloth' }));
+    P.push(part('chest', [0, 0, -0.006], [0, 0, 0.090], [0.078, 0.107], [0.062, 0.090], 6, 'main', { prof: PROF.chest, mat: 'cloth' }));
+    // 胸の上に乗る僧帽筋。首の付け根が「板」に見えないようにする
+    P.push(part('chest', [-0.010, 0, 0.060], [-0.006, 0, 0.098], [0.054, 0.098], [0.040, 0.070], 6, 'main', { mat: 'cloth', ao: 0.88 }));
+    P.push(part('neck', [-0.004, 0, -0.020], [-0.004, 0, 0.050], [0.035, 0.037], [0.033, 0.036], 6, 'skin', { mat: 'skin', ao: 0.72 }));
+
+    /* ---- 頭 ---- */
+    P.push(part('head', [0.008, 0, -0.004], [-0.006, 0, 0.152], [0.080, 0.070], [0.080, 0.070], 6, 'skin',
+      { prof: PROF.head, mat: 'skin' }));
+    // 顔まわり（近距離だけ。遠くでは buildParts が落とす）
+    P.push(part('head', [0.062, 0, 0.062], [0.080, 0, 0.052], [0.020, 0.016], [0.011, 0.010], 6, 'skin', { mat: 'skin', face: 1 }));   // 鼻
+    P.push(part('head', [0.050, 0, 0.086], [0.062, 0, 0.082], [0.016, 0.046], [0.012, 0.040], 6, 'skin', { mat: 'skin', face: 1, ao: 0.9 })); // 眉
+    P.push(ball('head', [0.052, 0.028, 0.074], 0.011, 0.011, 0.011, 6, 'eye', 'glass', PROF.sph3));
+    P.push(ball('head', [0.052, -0.028, 0.074], 0.011, 0.011, 0.011, 6, 'eye', 'glass', PROF.sph3));
+    P.push(part('head', [0.058, 0.020, 0.034], [0.058, -0.020, 0.034], [0.008, 0.007], [0.008, 0.007], 4, 'mouth', { mat: 'skin', face: 1 })); // 口
+    P.push(ball('head', [-0.008, 0.070, 0.062], 0.020, 0.010, 0.024, 6, 'skin', 'skin', PROF.sph3));   // 耳
+    P.push(ball('head', [-0.008, -0.070, 0.062], 0.020, 0.010, 0.024, 6, 'skin', 'skin', PROF.sph3));
+
+    /* ---- 腕（肩→上腕→肘→前腕→手首→手） ---- */
+    [['L', 1], ['R', -1]].forEach(([S, sgn]) => {
+      P.push(ball('shoulder' + S, [0, sgn * 0.012, 0.004], 0.046, 0.046, 0.044, 6, 'main', 'cloth', PROF.sph3));
+      P.push(part('arm' + S + 'U', [0, 0, 0.006], [0, 0, -0.150], [0.039, 0.040], [0.031, 0.032], 6, 'main',
+        { prof: PROF.limbUp, mat: 'cloth' }));
+      P.push(ball('arm' + S + 'L', [0, 0, 0.004], 0.031, 0.032, 0.030, 6, 'main', 'cloth', PROF.sph3));   // 肘
+      P.push(part('arm' + S + 'L', [0, 0, -0.004], [0, 0, -0.146], [0.030, 0.031], [0.023, 0.024], 6, 'skin',
+        { prof: PROF.limbLo, mat: 'skin' }));
+      // 手: 手のひら・親指・指の塊
+      P.push(part('hand' + S, [0, 0, 0.004], [0.004, 0, -0.040], [0.024, 0.017], [0.023, 0.016], 6, 'skin', { prof: PROF.sph5, mat: 'skin' }));
+      P.push(part('hand' + S, [0.004, 0, -0.036], [0.008, 0, -0.062], [0.022, 0.015], [0.017, 0.012], 6, 'skin', { mat: 'skin' }));
+      P.push(part('hand' + S, [0.006, sgn * 0.014, -0.014], [0.020, sgn * 0.024, -0.036], [0.011, 0.009], [0.009, 0.008], 5, 'skin', { mat: 'skin', face: 1 })); // 親指
+    });
+
+    /* ---- 脚（股→腿→膝→すね→足首→足） ---- */
+    [['L', 1], ['R', -1]].forEach(([S, sgn]) => {
+      P.push(ball('leg' + S + 'U', [0, 0, 0.014], 0.056, 0.058, 0.050, 6, 'pants', 'cloth', PROF.sph3));
+      P.push(part('leg' + S + 'U', [0, 0, 0.020], [0, 0, -0.216], [0.057, 0.060], [0.044, 0.046], 6, 'pants',
+        { prof: PROF.limbUp, mat: 'cloth' }));
+      P.push(ball('leg' + S + 'L', [0, 0, 0.006], 0.045, 0.047, 0.044, 6, 'pants', 'cloth', PROF.sph3));  // 膝
+      P.push(part('leg' + S + 'L', [0, 0, 0.000], [0, 0, -0.206], [0.044, 0.046], [0.030, 0.032], 6, 'pants',
+        { prof: PROF.limbLo, mat: 'cloth' }));
+      // 足（つま先へ向かって薄く広がる靴の形）
+      P.push(part('foot' + S, [-0.026, 0, -0.012], [0.030, 0, -0.020], [0.030, 0.034], [0.028, 0.034], 6, 'boot',
+        { prof: PROF.waist, mat: 'rubber' }));
+      P.push(part('foot' + S, [0.028, 0, -0.020], [0.066, 0, -0.024], [0.028, 0.034], [0.017, 0.026], 6, 'boot', { mat: 'rubber' }));
+      P.push(part('foot' + S, [-0.030, 0, -0.028], [0.062, 0, -0.032], [0.012, 0.036], [0.010, 0.030], 4, 'sole', { mat: 'rubber', ao: 0.7 })); // 靴底
+    });
+    return P;
+  }
+
+
+  /* --- 装備。独立した部品リストとして着脱できる ------------------------ */
+  const GEAR = {
+    /** ヘルメット。丸いドーム＋ひさし＋（Lv3は）バイザー */
+    helmet(level) {
+      const p = [
+        part('head', [-0.006, 0, 0.040], [-0.004, 0, 0.156], [0.086, 0.078], [0.086, 0.078], 6, 'gear',
+          { prof: [[0.00, 0.86, 0.86], [0.22, 0.99, 0.99], [0.48, 1.00, 1.00], [0.74, 0.92, 0.92], [1.00, 0.52, 0.54]], mat: 'gear' }),
+        // ひさし
+        part('head', [0.038, 0, 0.092], [0.086, 0, 0.080], [0.020, 0.072], [0.008, 0.058], 6, 'gear',
+          { prof: PROF.waist, mat: 'gear' }),
+        // 後頭部のあご紐取付
+        part('head', [-0.070, 0, 0.048], [-0.076, 0, 0.086], [0.016, 0.050], [0.014, 0.042], 6, 'gear2', { mat: 'polymer', ao: 0.85 })
+      ];
+      if (level >= 2) {
+        p.push(ball('head', [-0.012, 0.082, 0.070], 0.026, 0.014, 0.028, 6, 'gear2', 'polymer', PROF.sph3));
+        p.push(ball('head', [-0.012, -0.082, 0.070], 0.026, 0.014, 0.028, 6, 'gear2', 'polymer', PROF.sph3));
+        p.push(part('head', [0.010, 0.084, 0.100], [0.010, -0.084, 0.100], [0.012, 0.010], [0.012, 0.010], 5, 'gear2', { mat: 'polymer' }));
+      }
+      if (level >= 3) {
+        p.push(part('head', [0.052, 0, 0.036], [0.068, 0, 0.088], [0.024, 0.066], [0.020, 0.062], 6, 'visor',
+          { prof: PROF.waist, mat: 'glass' }));
+      }
+      return p;
+    },
+    /** ベスト。胸のラインに沿った殻＋前面のポーチ */
+    vest() {
+      return [
+        part('chest', [0.006, 0, -0.008], [0.006, 0, 0.086], [0.086, 0.114], [0.070, 0.098], 6, 'gear',
+          { prof: PROF.chest, mat: 'gear' }),
+        // 襟
+        part('chest', [-0.004, 0, 0.082], [-0.004, 0, 0.104], [0.060, 0.092], [0.050, 0.078], 6, 'gear', { mat: 'gear', ao: 0.85 }),
+        // 前面ポーチ
+        part('chest', [0.074, 0.042, 0.012], [0.078, 0.042, 0.050], [0.018, 0.026], [0.016, 0.024], 6, 'gear2', { prof: PROF.waist, mat: 'polymer' }),
+        part('chest', [0.074, -0.042, 0.012], [0.078, -0.042, 0.050], [0.018, 0.026], [0.016, 0.024], 6, 'gear2', { prof: PROF.waist, mat: 'polymer' }),
+        // 肩ベルト
+        part('chest', [0.030, 0.060, 0.086], [-0.030, 0.060, 0.086], [0.014, 0.020], [0.014, 0.020], 5, 'gear2', { mat: 'cloth', ao: 0.9 }),
+        part('chest', [0.030, -0.060, 0.086], [-0.030, -0.060, 0.086], [0.014, 0.020], [0.014, 0.020], 5, 'gear2', { mat: 'cloth', ao: 0.9 })
+      ];
+    },
+    /** バックパック。丸みのある本体＋上蓋＋サイドポケット */
+    backpack() {
+      return [
+        part('chest', [-0.088, 0, -0.002], [-0.088, 0, 0.082], [0.042, 0.084], [0.040, 0.080], 6, 'gear2',
+          { prof: [[0.00, 0.86, 0.88], [0.30, 1.00, 1.00], [0.75, 1.00, 1.00], [1.00, 0.84, 0.88]], mat: 'cloth' }),
+        part('chest', [-0.118, 0, 0.020], [-0.118, 0, 0.062], [0.018, 0.062], [0.016, 0.056], 6, 'gear', { prof: PROF.waist, mat: 'cloth' }),
+        part('chest', [-0.086, 0.086, 0.014], [-0.086, 0.086, 0.056], [0.026, 0.018], [0.024, 0.016], 6, 'gear', { prof: PROF.waist, mat: 'cloth', ao: 0.88 }),
+        part('chest', [-0.086, -0.086, 0.014], [-0.086, -0.086, 0.056], [0.026, 0.018], [0.024, 0.016], 6, 'gear', { prof: PROF.waist, mat: 'cloth', ao: 0.88 })
+      ];
+    },
+    pouches() {
+      return [
+        part('pelvis', [0.018, 0.094, -0.016], [0.018, 0.104, 0.020], [0.026, 0.020], [0.024, 0.018], 6, 'gear',
+          { prof: PROF.waist, mat: 'cloth' }),
+        part('pelvis', [0.018, -0.094, -0.016], [0.018, -0.104, 0.020], [0.026, 0.020], [0.024, 0.018], 6, 'gear',
+          { prof: PROF.waist, mat: 'cloth' }),
+        // ベルト
+        part('pelvis', [0, 0, 0.030], [0, 0, 0.046], [0.078, 0.100], [0.078, 0.100], 6, 'gear2', { mat: 'rubber', ao: 0.85 })
+      ];
+    },
+    gloves() {
+      const g2 = [];
+      [['L', 1], ['R', -1]].forEach(([S, sgn]) => {
+        g2.push(part('hand' + S, [0, 0, 0.010], [0.005, 0, -0.044], [0.027, 0.020], [0.026, 0.019], 6, 'gear2', { prof: PROF.sph5, mat: 'rubber' }));
+        g2.push(part('arm' + S + 'L', [0, 0, -0.118], [0, 0, -0.150], [0.028, 0.029], [0.029, 0.030], 6, 'gear2', { mat: 'cloth', ao: 0.9 }));
+      });
+      return g2;
+    },
+    boots() {
+      const b2 = [];
+      [['L', 1], ['R', -1]].forEach(([S]) => {
+        b2.push(part('foot' + S, [-0.030, 0, -0.010], [0.034, 0, -0.020], [0.034, 0.038], [0.032, 0.038], 6, 'gear2',
+          { prof: PROF.waist, mat: 'rubber' }));
+        b2.push(part('leg' + S + 'L', [0, 0, -0.130], [0, 0, -0.204], [0.040, 0.042], [0.036, 0.038], 6, 'gear2',
+          { prof: PROF.waist, mat: 'cloth' }));
+      });
+      return b2;
+    },
+    hair(style) {
+      if (style === 0) return [];
+      if (style === 1) {
+        return [part('head', [-0.008, 0, 0.062], [-0.006, 0, 0.154], [0.084, 0.074], [0.084, 0.074], 6, 'hair',
+          { prof: [[0.00, 0.92, 0.92], [0.35, 1.00, 1.00], [0.72, 0.94, 0.94], [1.00, 0.48, 0.50]], mat: 'hair' })];
+      }
+      return [
+        part('head', [-0.010, 0, 0.046], [-0.006, 0, 0.156], [0.086, 0.076], [0.086, 0.076], 6, 'hair',
+          { prof: [[0.00, 0.90, 0.90], [0.30, 1.02, 1.02], [0.70, 0.96, 0.96], [1.00, 0.46, 0.48]], mat: 'hair' }),
+        part('head', [-0.066, 0, 0.030], [-0.078, 0, 0.078], [0.034, 0.062], [0.026, 0.050], 6, 'hair', { prof: PROF.waist, mat: 'hair' })
+      ];
+    }
+  };
+
+  /* =======================================================================
+   * 2b. 武器の3Dモデル
+   *   右手ボーンに付ける。手のローカル軸は構えたとき
+   *     -Z = 前（銃口方向） / +X = 上 / +Y = 左
+   *   になるので、そのまま「銃口が向いている方向」と一致する。
+   *   WeaponRoot ├ Body ├ Magazine ├ Barrel ├ Muzzle ├ Sight ├ Stock
+   * ===================================================================== */
+  const WEAPON_CLASS = {
+    PISTOL: { s: 0.52, barrel: 0.06, stock: 0, scope: 0 },
+    SMG: { s: 0.72, barrel: 0.09, stock: 0.05, scope: 0 },
+    AR: { s: 1.00, barrel: 0.13, stock: 0.09, scope: 0 },
+    SHOTGUN: { s: 1.05, barrel: 0.15, stock: 0.10, scope: 0, fat: 1.25 },
+    LMG: { s: 1.15, barrel: 0.14, stock: 0.09, scope: 0, fat: 1.35 },
+    DMR: { s: 1.15, barrel: 0.16, stock: 0.10, scope: 1 },
+    SNIPER: { s: 1.30, barrel: 0.19, stock: 0.11, scope: 1 }
+  };
+
+  /**
+   * 武器クラスから部品リストを作る。muzzle は銃口の位置。
+   * 「棒＋箱」に見せないため、
+   *   ・レシーバは面取りした輪郭
+   *   ・銃身とハンドガードは円筒
+   *   ・トリガーガード・チャージングハンドル・排莢口を入れる
+   *   ・金属 / 樹脂 / ゴム / ガラス を材質で描き分ける
+   * ようにしている。
+   */
+  function weaponParts(cls, bone) {
+    const k = WEAPON_CLASS[cls] || WEAPON_CLASS.AR;
+    const s = k.s, fat = k.fat || 1;
+    const B = bone || 'weapon';
+    const recvEnd = -(0.05 + 0.14 * s);
+    const barEnd = recvEnd - k.barrel;
+    const bevel = [[0.00, 0.90, 0.88], [0.12, 1.00, 1.00], [0.88, 1.00, 1.00], [1.00, 0.90, 0.90]];
+    const list = [
+      // レシーバ（面取りした角柱）
+      part(B, [0, 0, -0.028], [0, 0, recvEnd * 0.72], [0.023 * fat, 0.016 * fat], [0.021 * fat, 0.015 * fat], 6, 'weapon',
+        { prof: bevel, mat: 'metal' }),
+      // ハンドガード（円筒・樹脂）
+      part(B, [0, 0, recvEnd * 0.70], [0, 0, recvEnd], [0.017 * fat, 0.017 * fat], [0.015 * fat, 0.015 * fat], 6, 'weapon2',
+        { prof: bevel, mat: 'polymer' }),
+      // 銃身
+      part(B, [0, 0, recvEnd], [0, 0, barEnd + 0.012], [0.008 * fat, 0.008 * fat], [0.0072 * fat, 0.0072 * fat], 6, 'weapon2',
+        { mat: 'metal' }),
+      // マズルブレーキ
+      part(B, [0, 0, barEnd + 0.014], [0, 0, barEnd], [0.011 * fat, 0.011 * fat], [0.010 * fat, 0.010 * fat], 6, 'weapon',
+        { prof: bevel, mat: 'metal' }),
+      // 弾倉（少し前傾させて差す）
+      part(B, [-0.010, 0, recvEnd * 0.50], [-0.050 * s - 0.014, 0, recvEnd * 0.58], [0.020, 0.010], [0.017, 0.009], 6, 'weapon2',
+        { prof: bevel, mat: 'metal' }),
+      // グリップ（ゴム）
+      part(B, [-0.010, 0, -0.040], [-0.050, 0, -0.012], [0.015, 0.012], [0.013, 0.010], 6, 'grip',
+        { prof: bevel, mat: 'rubber' }),
+      // トリガーガード
+      part(B, [-0.016, 0, -0.044], [-0.030, 0, -0.052], [0.005, 0.007], [0.005, 0.007], 4, 'weapon', { mat: 'metal', face: 1 }),
+      part(B, [-0.030, 0, -0.052], [-0.030, 0, -0.070], [0.005, 0.007], [0.005, 0.007], 4, 'weapon', { mat: 'metal', face: 1 }),
+      // 排莢口とチャージングハンドル
+      part(B, [0.012, -0.016, recvEnd * 0.30], [0.012, -0.016, recvEnd * 0.52], [0.006, 0.005], [0.006, 0.005], 4, 'weapon2',
+        { mat: 'metal', ao: 0.85, face: 1 }),
+      part(B, [0.018, 0, -0.030], [0.018, 0, -0.044], [0.006, 0.010], [0.006, 0.010], 4, 'weapon2', { mat: 'metal', face: 1 })
+    ];
+    if (k.stock) {
+      list.push(part(B, [0.002, 0, -0.030], [0.006, 0, k.stock * 0.55], [0.019, 0.013], [0.017, 0.012], 6, 'weapon',
+        { prof: bevel, mat: 'polymer' }));
+      list.push(part(B, [0.006, 0, k.stock * 0.55], [0.010, 0, k.stock], [0.017, 0.012], [0.021, 0.013], 6, 'weapon',
+        { prof: bevel, mat: 'polymer' }));
+    }
+    // サイト（前後）
+    list.push(part(B, [0.020 * fat, 0, recvEnd * 0.60], [0.021 * fat, 0, recvEnd * 0.66], [0.009, 0.010], [0.009, 0.010], 5, 'weapon2',
+      { mat: 'metal' }));
+    list.push(part(B, [0.020 * fat, 0, recvEnd * 0.92], [0.021 * fat, 0, recvEnd * 0.98], [0.008, 0.005], [0.008, 0.005], 5, 'weapon2',
+      { mat: 'metal', face: 1 }));
+    if (k.scope) {
+      list.push(part(B, [0.030, 0, recvEnd * 0.44], [0.032, 0, recvEnd * 0.96], [0.014, 0.014], [0.013, 0.013], 6, 'weapon',
+        { prof: bevel, mat: 'metal' }));
+      // レンズ
+      list.push(part(B, [0.031, 0, recvEnd * 0.42], [0.031, 0, recvEnd * 0.40], [0.012, 0.012], [0.012, 0.012], 6, 'lens',
+        { mat: 'glass', face: 1 }));
+    }
+    return { parts: list, muzzle: [0, 0, barEnd - 0.005], length: -barEnd };
+  }
+
   /**
    * 一人称のビューモデル一式（武器＋両手＋袖）。
    * 三人称の腕をそのまま映すと、手がカメラのすぐ手前に来て画面を覆うため、
@@ -132,104 +368,6 @@
     return { parts: gun.concat(hands), muzzle: w.muzzle };
   }
 
-  /* --- 装備。独立した部品リストとして着脱できる ------------------------ */
-  const GEAR = {
-    helmet(level) {
-      const p = [
-        part('head', [-0.006, 0, 0.052], [-0.004, 0, 0.152], [0.076, 0.079], [0.048, 0.054], 8, 'gear'),
-        part('head', [0.040, 0, 0.086], [0.082, 0, 0.078], [0.026, 0.070], [0.012, 0.062], 6, 'gear') // ひさし
-      ];
-      if (level >= 2) p.push(part('head', [-0.014, 0.070, 0.056], [-0.014, 0.080, 0.098], [0.028, 0.016], [0.024, 0.014], 4, 'gear2'),
-        part('head', [-0.014, -0.070, 0.056], [-0.014, -0.080, 0.098], [0.028, 0.016], [0.024, 0.014], 4, 'gear2'));
-      if (level >= 3) p.push(part('head', [0.062, 0, 0.040], [0.064, 0, 0.086], [0.024, 0.062], [0.022, 0.060], 6, 'visor'));
-      return p;
-    },
-    vest() {
-      return [
-        part('chest', [0.004, 0, -0.002], [0.004, 0, 0.086], [0.082, 0.110], [0.068, 0.094], 8, 'gear'),
-        part('chest', [0.070, 0.040, 0.016], [0.070, 0.040, 0.052], [0.016, 0.022], [0.014, 0.020], 4, 'gear2'),
-        part('chest', [0.070, -0.040, 0.016], [0.070, -0.040, 0.052], [0.016, 0.022], [0.014, 0.020], 4, 'gear2')
-      ];
-    },
-    backpack() {
-      return [
-        part('chest', [-0.084, 0, 0.004], [-0.084, 0, 0.078], [0.038, 0.080], [0.034, 0.072], 4, 'gear2'),
-        part('chest', [-0.120, 0, 0.018], [-0.120, 0, 0.058], [0.014, 0.062], [0.012, 0.054], 4, 'gear')
-      ];
-    },
-    pouches() {
-      return [
-        part('pelvis', [0.020, 0.090, -0.014], [0.020, 0.100, 0.018], [0.024, 0.018], [0.022, 0.016], 4, 'gear'),
-        part('pelvis', [0.020, -0.090, -0.014], [0.020, -0.100, 0.018], [0.024, 0.018], [0.022, 0.016], 4, 'gear')
-      ];
-    },
-    gloves() {
-      return [
-        part('handL', [0, 0, 0.006], [0.004, 0, -0.050], [0.026, 0.022], [0.022, 0.018], 6, 'gear2'),
-        part('handR', [0, 0, 0.006], [0.004, 0, -0.050], [0.026, 0.022], [0.022, 0.018], 6, 'gear2')
-      ];
-    },
-    boots() {
-      return [
-        part('footL', [-0.028, 0, -0.012], [0.066, 0, -0.022], [0.034, 0.038], [0.026, 0.030], 6, 'gear2'),
-        part('legLL', [0, 0, -0.145], [0, 0, -0.203], [0.036, 0.038], [0.034, 0.036], 6, 'gear2'),
-        part('footR', [-0.028, 0, -0.012], [0.066, 0, -0.022], [0.034, 0.038], [0.026, 0.030], 6, 'gear2'),
-        part('legRL', [0, 0, -0.145], [0, 0, -0.203], [0.036, 0.038], [0.034, 0.036], 6, 'gear2')
-      ];
-    },
-    hair(style) {
-      if (style === 0) return [];
-      if (style === 1) return [part('head', [-0.010, 0, 0.070], [-0.006, 0, 0.150], [0.074, 0.077], [0.044, 0.050], 8, 'hair')];
-      return [
-        part('head', [-0.012, 0, 0.056], [-0.008, 0, 0.150], [0.076, 0.079], [0.046, 0.052], 8, 'hair'),
-        part('head', [-0.052, 0, 0.040], [-0.058, 0, 0.086], [0.030, 0.062], [0.024, 0.052], 6, 'hair')
-      ];
-    }
-  };
-
-  /* =======================================================================
-   * 2b. 武器の3Dモデル
-   *   右手ボーンに付ける。手のローカル軸は構えたとき
-   *     -Z = 前（銃口方向） / +X = 上 / +Y = 左
-   *   になるので、そのまま「銃口が向いている方向」と一致する。
-   *   WeaponRoot ├ Body ├ Magazine ├ Barrel ├ Muzzle ├ Sight ├ Stock
-   * ===================================================================== */
-  const WEAPON_CLASS = {
-    PISTOL: { s: 0.52, barrel: 0.06, stock: 0, scope: 0 },
-    SMG: { s: 0.72, barrel: 0.09, stock: 0.05, scope: 0 },
-    AR: { s: 1.00, barrel: 0.13, stock: 0.09, scope: 0 },
-    SHOTGUN: { s: 1.05, barrel: 0.15, stock: 0.10, scope: 0, fat: 1.25 },
-    LMG: { s: 1.15, barrel: 0.14, stock: 0.09, scope: 0, fat: 1.35 },
-    DMR: { s: 1.15, barrel: 0.16, stock: 0.10, scope: 1 },
-    SNIPER: { s: 1.30, barrel: 0.19, stock: 0.11, scope: 1 }
-  };
-
-  /** 武器クラスから部品リストを作る。muzzle は銃口の位置（手ローカル） */
-  function weaponParts(cls, bone) {
-    const k = WEAPON_CLASS[cls] || WEAPON_CLASS.AR;
-    const s = k.s, fat = k.fat || 1;
-    const B = bone || 'weapon';
-    const recvEnd = -(0.05 + 0.14 * s);
-    const barEnd = recvEnd - k.barrel;
-    const list = [
-      // Body（レシーバ）
-      part(B, [0, 0, -0.03], [0, 0, recvEnd], [0.021 * fat, 0.015 * fat], [0.019 * fat, 0.014 * fat], 4, 'weapon'),
-      // Barrel
-      part(B, [0, 0, recvEnd], [0, 0, barEnd], [0.009 * fat, 0.009 * fat], [0.008 * fat, 0.008 * fat], 6, 'weapon2'),
-      // Magazine
-      part(B, [-0.008, 0, recvEnd * 0.55], [-0.052 * s - 0.01, 0, recvEnd * 0.62], [0.019, 0.009], [0.016, 0.008], 4, 'weapon2'),
-      // Grip
-      part(B, [-0.008, 0, -0.045], [-0.048, 0, -0.018], [0.014, 0.011], [0.012, 0.009], 4, 'weapon2')
-    ];
-    if (k.stock) list.push(part(B, [0.002, 0, -0.03], [0.004, 0, k.stock], [0.018, 0.012], [0.016, 0.011], 4, 'weapon'));
-    // Sight
-    list.push(part(B, [0.020 * fat, 0, recvEnd * 0.62], [0.022 * fat, 0, recvEnd * 0.92],
-      [0.007, 0.008], [0.006, 0.007], 4, 'weapon2'));
-    if (k.scope) list.push(part(B, [0.030, 0, recvEnd * 0.50], [0.032, 0, recvEnd * 0.95],
-      [0.013, 0.013], [0.012, 0.012], 6, 'weapon'));
-    return { parts: list, muzzle: [0, 0, barEnd - 0.005], length: -barEnd };
-  }
-
   /* =======================================================================
    * 3. キャラクター定義（データとして持つ）
    * ===================================================================== */
@@ -240,6 +378,9 @@
   }
   const SKIN = ['#f0c39a', '#d99b6c', '#a9714a', '#7a4d31', '#f6d9b8'];
   const HAIRC = ['#2b2118', '#4a3a2a', '#6b4a2f', '#161616', '#8a6a45'];
+  // 上着と別系統にして「全身が同じ色」にならないようにする
+  const PANTS = ['#3b4350', '#4a4436', '#333a40', '#584a3a', '#2f3a35', '#454b52'];
+  const GEARC = ['#3a424b', '#4b4a3a', '#2f353c', '#514735', '#3b4740'];
 
   /**
    * 見た目の個体差。id から決まるので毎フレーム同じ姿になる。
@@ -255,15 +396,40 @@
       height: o.height != null ? o.height : lerp(0.94, 1.06, r(0)),
       build: o.build != null ? o.build : lerp(0.90, 1.12, r(3)),
       skin: SKIN[(h >>> 6) % SKIN.length],
+      pants: PANTS[(h >>> 9) % PANTS.length],
+      gearColor: GEARC[(h >>> 12) % GEARC.length],
       hair: (h >>> 11) % 3,
       hairColor: HAIRC[(h >>> 13) % HAIRC.length],
-      helmet: o.helmet != null ? o.helmet : (h >>> 16) % 3,          // 0..2
+      helmet: o.helmet != null ? o.helmet : (h >>> 16) % 3,
       vest: o.vest != null ? o.vest : ((h >>> 19) & 1),
       backpack: o.backpack != null ? o.backpack : ((h >>> 21) & 1),
       gloves: 1, boots: 1, pouches: ((h >>> 23) & 1),
       palette: palette || {},
       animationSet: 'humanoid'
     };
+  }
+
+  /** LODに応じて輪郭の分割と側面の分割を落とす（シルエットは保つ） */
+  function simplify(list, lod) {
+    // 最寄りだけは分割を1段上げて、輪郭のカクつきを消す
+    if (lod <= 0) return list.map(p => (p.sides >= 6
+      ? Object.assign({}, p, { sides: p.sides + 2 }) : p));
+    const maxSides = lod === 1 ? 6 : 4;
+    const maxRings = lod === 1 ? 4 : 2;
+    return list.filter(p => !(p.face && lod >= 1)).map(p => {
+      const o = Object.assign({}, p, { sides: Math.min(p.sides, maxSides) });
+      if (p.prof && p.prof.length > maxRings) {
+        if (maxRings <= 2) o.prof = null;
+        else {
+          const src = p.prof, keep = [src[0]];
+          const step = (src.length - 1) / (maxRings - 1);
+          for (let i = 1; i < maxRings - 1; i++) keep.push(src[Math.round(i * step)]);
+          keep.push(src[src.length - 1]);
+          o.prof = keep;
+        }
+      }
+      return o;
+    });
   }
 
   /** 定義から実際の描画パーツ一覧を組み立てる（装備の付け外しはここで完結） */
@@ -280,9 +446,9 @@
       if (def.gloves) list = list.concat(GEAR.gloves());
       if (def.pouches) list = list.concat(GEAR.pouches());
     }
-    if (lod >= 1) list = list.map(p => Object.assign({}, p, { sides: Math.min(p.sides, 4) }));
+    list = simplify(list, lod);
     if (lod >= 2) {
-      // 遠景は指・鼻・ひさしのような細部を落とす
+      // 遠景は細部を落として輪郭だけ残す
       list = list.filter(p => (p.r0[0] + p.r0[1]) > 0.055);
     }
     return list;
@@ -386,6 +552,19 @@
       P.head.ry = -0.75;
     }
 
+    /* --- 着地の沈み込み（膝を曲げて衝撃を受け止める） ------------------ */
+    const landK = opt.landK || 0;
+    if (landK > 0 && stance !== 'prone') {
+      const e = Math.sin(landK * Math.PI);
+      R0.z -= e * 0.10;
+      R0.lean += e * 0.22;
+      P.legLU.ry -= e * 0.55; P.legRU.ry -= e * 0.55;
+      P.legLL.ry += e * 1.05; P.legRL.ry += e * 1.05;
+      P.footL.ry -= e * 0.45; P.footR.ry -= e * 0.45;
+      P.armLU.rx -= e * 0.35; P.armRU.rx += e * 0.35;
+      P.chest.ry += e * 0.18;
+    }
+
     /* --- 移動（歩き／走り／全力） -------------------------------------- */
     const gait = sprint ? 2.0 : (moving ? 1.0 : 0);
     if (gait > 0 && stance !== 'prone') {
@@ -398,11 +577,15 @@
       P.legLL.ry += clamp(-s, 0, 1) * amp * 0.85 + 0.12;
       P.legRL.ry += clamp(s, 0, 1) * amp * 0.85 + 0.12;
       P.footL.ry += s * 0.22; P.footR.ry += -s * 0.22;
-      // 上下動と体のひねり
+      // 上下動・左右の体重移動・体のひねり。頭は少し戻して視線を安定させる
       R0.z += (Math.abs(s2) * 0.5 - 0.25) * amp * 0.055;
+      R0.y += s * 0.016 * amp;                    // 接地している足の側へ重心が乗る
+      R0.roll += -s * 0.045 * amp;
       R0.yaw += s * 0.10 * amp;
       P.chest.rz += -s * 0.14 * amp;
       P.pelvis.rz += s * 0.10 * amp;
+      P.head.rz += s * 0.06 * amp;
+      P.head.ry += -Math.abs(s2) * 0.03 * amp;
       R0.lean += sprint ? 0.20 : 0.07;
       if (!aiming) {                              // 銃を構えていない時だけ腕を振る
         P.armLU.ry += s * amp * 0.70;
@@ -414,6 +597,8 @@
       // 待機。呼吸と体重移動でただの置物にしない
       const br = Math.sin(t * 1.7);
       R0.z += br * 0.006;
+      R0.y += Math.sin(t * 0.42) * 0.010;         // ゆっくり体重を移す
+      R0.roll += Math.sin(t * 0.42) * 0.020;
       P.chest.ry += br * 0.035;
       P.head.ry += Math.sin(t * 1.3 + 1) * 0.05;
       P.head.rz += Math.sin(t * 0.55) * 0.10;
@@ -685,6 +870,7 @@
   g.Model3D = {
     RIG, BONE_INDEX, POSE_KEYS, GEAR,
     hash32, defineCharacter, buildParts, bodyParts, vmParts, weaponParts, WEAPON_CLASS,
+    PROF, ball, simplify,
     newPose, animate, poseName, solve, boneToChar,
     matMul, eulerMat, aimMatrix, ik2, poseWeapon
   };

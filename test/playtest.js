@@ -251,6 +251,25 @@ function report() {
 
   /* ================= 7. 命中・ダメージ・撃破 ================= */
   section('7. 命中判定 / ダメージ / 撃破');
+  // 見通しの取れる敵が居ない配置になることがあるので、居なければ1体を正面へ寄せる
+  await page.evaluate(() => {
+    const G = __game.Game, R = __game.Render, p = G.player;
+    const seen = G.enemies.some(e => e.state !== 'dead' && R.los(G.map, p.x, p.y, e.x, e.y));
+    if (seen) return;
+    const e = G.enemies.find(e => e.state !== 'dead');
+    if (!e) return;
+    for (let a = 0; a < 24; a++) {
+      const ang = a / 24 * Math.PI * 2;
+      const tx = p.x + Math.cos(ang) * 5, ty = p.y + Math.sin(ang) * 5;
+      if (G.solidAt ? G.solidAt(tx, ty) : false) continue;
+      if (!R.los(G.map, p.x, p.y, tx, ty)) continue;
+      e.x = tx; e.y = ty; p.ang = ang;
+      // 当たり判定は描画時に作られる画面上の矩形を使うので、動かしたら描き直す
+      R.render(G);
+      return;
+    }
+  });
+  await frames(2);
   const hitInfo = await page.evaluate(() => {
     const G = __game.Game, R = __game.Render;
     // pick a visible enemy and aim at it

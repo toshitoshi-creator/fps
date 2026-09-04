@@ -6,9 +6,10 @@
   g.DATA = { ENEMIES: BRDATA.AVATARS };
 
   const THEME = {
-    ceil: '#cfefff', ceil2: '#5ec8ff',
-    floor: '#6fae63', floor2: '#bcdcab',
-    fog: '#dff0ff',
+    texStyle: 'br',
+    ceil: '#cfefff', ceil2: '#7fd0f5',
+    floor: '#5f9c56', floor2: '#9dc888',
+    fog: '#d6e8f2',
     walls: ['#c9b48a', '#5a7a4a', '#b5813f', '#2f79a8']
   };
 
@@ -304,6 +305,9 @@
     Sprites.style = 'pop';
     Render.floorGrid = true;
     Render.use3d = true;            // キャラクターを3Dモデルで描く
+    Render.groundTex = true;        // 地面を世界座標から塗る（草・土のむら）
+    Render.groundDirt = [124, 103, 74];
+    Render.sun = Char3D.light;      // 空の光芒をキャラの光源と揃える
     Input.init();
     BRUI.init();
     applySettings();
