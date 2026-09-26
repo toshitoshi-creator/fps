@@ -16,9 +16,9 @@
     PLASTER: 0, BRICK: 1, CONCRETE: 2, METAL: 3, WOOD: 4, ROOF: 5, WINDOW: 6,
     CRATE: 7, BARK: 8, NEEDLE: 9, LEAF: 10, ROCK: 11, GRASS: 12, FABRIC: 13,
     CAMO: 14, GUN: 15, INTERIOR: 16, PLANE: 17, CHUTE: 18, WHITE: 19, SKIN: 20,
-    BARREL: 21, DETAIL: 22, DOOR: 23
+    BARREL: 21, DETAIL: 22, DOOR: 23, BRANCH: 24
   };
-  const LAYERS = 24;
+  const LAYERS = 25;
 
   /* ---------------- 乱数とノイズ ---------------- */
   function mulberry(a) {
@@ -188,12 +188,31 @@
     const k = 0.45 + n * 0.5 - ridge * 0.25;
     put(o, 96 * k + 10, 72 * k + 6, 54 * k + 4, 15);
   };
-  // 針葉樹の葉
+  // 針葉樹の葉（色の本体はテクスチャ側。頂点色はほぼ白で個体差だけ付ける）
   MAKERS[L.NEEDLE] = (u, v, o) => {
     const n = fbm(u, v, 16, 5), c = fbm(u, v, 4, 3);
     const clump = sstep(0.35, 0.7, n);
-    const k = 0.35 + clump * 0.55 + c * 0.2;
-    put(o, 44 * k + 6, 82 * k + 10, 40 * k + 6, 30);
+    const k = 0.45 + clump * 0.5 + c * 0.25;
+    const streak = (Math.sin(u * 180 + n * 12) * 0.5 + 0.5) * 0.12;
+    put(o, 62 * k + 10 - streak * 30, 104 * k + 16 - streak * 20, 52 * k + 8, 6);
+  };
+  // 針葉樹の枝（切り抜き）。左端が幹側、先へ行くほど細い羽根のような輪郭
+  MAKERS[L.BRANCH] = (u, v, o) => {
+    const cy = 0.5 + (u - 0.5) * 0.05;
+    const w = 0.44 * (1 - u * 0.62) * (u < 0.06 ? u / 0.06 : 1);
+    const dy = Math.abs(v - cy);
+    const saw = Math.abs(((u * 26 + (v > cy ? 0.5 : 0)) % 1) - 0.5) * 2;       // ぎざぎざの縁
+    const n = fbm(u, v, 12, 3);
+    const edge = w * (0.72 + saw * 0.28) - (n - 0.5) * 0.06;
+    let a = 0, shade = 0;
+    if (dy < edge) {
+      a = 255;
+      const t = 1 - dy / Math.max(edge, 1e-3);
+      const needle = Math.sin((u * 60 + dy * (v > cy ? 40 : -40)) * Math.PI) * 0.5 + 0.5;
+      shade = 0.55 + t * 0.35 + needle * 0.18 + (n - 0.5) * 0.25;
+      if (dy < 0.014) shade = 0.4;
+    }
+    put(o, 64 * shade + 10, 108 * shade + 16, 54 * shade + 8, a);
   };
   // 茂みの葉（切り抜き）
   MAKERS[L.LEAF] = (u, v, o, px, py) => {
@@ -216,16 +235,16 @@
       if (d < 1) { a = 255; best = Math.max(best, 1 - d * 0.5 + lf[4] * 0.3); }
     }
     const n = fbm(u, v, 8, 3);
-    const k = 0.45 + best * 0.4 + n * 0.25;
-    put(o, 70 * k, 118 * k, 52 * k, a);
+    const k = 0.55 + best * 0.4 + n * 0.25;
+    put(o, 84 * k, 136 * k, 60 * k, a);
   };
   // 岩（花崗岩 + 苔）
   MAKERS[L.ROCK] = (u, v, o) => {
     const n = fbm(u, v, 6, 6), f = fbm(u, v, 48, 2);
     const crack = sstep(0.47, 0.5, Math.abs(fbm(u, v, 5, 3) - 0.5) * 2) < 0.05 ? 0.7 : 1;
-    const k = (0.55 + n * 0.45 + (f - 0.5) * 0.15) * crack;
+    const k = (0.62 + n * 0.4 + (f - 0.5) * 0.15) * crack;
     const moss = sstep(0.62, 0.74, fbm(u + 0.2, v, 5, 4));
-    put(o, mix(128 * k, 86 * k, moss), mix(126 * k, 104 * k, moss), mix(120 * k, 60 * k, moss), 45);
+    put(o, mix(168 * k, 104 * k, moss), mix(164 * k, 124 * k, moss), mix(156 * k, 72 * k, moss), 45);
   };
   // 草の葉（切り抜き）
   MAKERS[L.GRASS] = (u, v, o, px) => {

@@ -15,6 +15,7 @@
 
   let last = 0, frames = 0, fpsT = 0, fps = 60, portrait = false;
   let hintStep = 0, autoRunT = 0;
+  const adsElOff = () => { const e = U.$id('btnAds'); if (e) e.classList.remove('toggled'); };
 
   function checkOrientation() {
     const p = window.innerHeight > window.innerWidth * 1.04;
@@ -122,7 +123,16 @@
     Input.onReload = () => BR.tryReload(BR.player);
     Input.onSwitch = () => BR.switchWeapon(BR.player);
     Input.onSelectWeapon = i => BR.switchWeapon(BR.player, i);
-    Input.hold('btnAds', () => { Input._btnAds = true; }, () => { Input._btnAds = false; });
+    // ADS: 短くタップで切り替え / 押しっぱなしなら離すと戻る（どちらの癖でも使える）
+    const adsEl = U.$id('btnAds');
+    let adsT0 = 0, adsWas = false;
+    Input.hold('btnAds', () => {
+      adsWas = !!Input._btnAds; Input._btnAds = true; adsT0 = performance.now();
+    }, () => {
+      const held = performance.now() - adsT0;
+      if (held > 300 || adsWas) Input._btnAds = false;
+      adsEl.classList.toggle('toggled', !!Input._btnAds);
+    });
     // 左手側の射撃ボタン（右手で狙いながら左親指で撃てる）
     Input.hold('btnFire2', () => { Input._btnFire2 = true; }, () => { Input._btnFire2 = false; });
     // 射撃ボタンを押したまま指を動かすと、そのまま狙いを動かせる
@@ -299,11 +309,12 @@
     if (!hintStep) return;
     const p = BR.player;
     if (hintStep === 1 && BR.state === 'PLANE') {
-      BRUI.tutorial('DROP を押して降下。マップをタップで目的地を記録できる');
+      BRUI.tutorial('右上のマップをタップして目的地を決め、DROP で降下');
     } else if (hintStep === 1 && p.state === 'drop') {
-      hintStep = 2; BRUI.tutorial('左スティックで滑空方向を調整');
+      hintStep = 2; BRUI.tutorial('左スティックで滑空方向を調整 / 右側をスワイプで見回す');
     } else if (hintStep === 2 && p.state === 'ground') {
-      hintStep = 3; BRUI.tutorial('アイテムに近づいて「拾う」をタップ');
+      hintStep = 3; BRUI.tutorial('足元のアイテムは右の一覧をタップで拾える');
+      setTimeout(() => { if (hintStep === 3) BRUI.tutorial(null); }, 7000);
     }
   }
 
@@ -327,6 +338,9 @@
       if (autoRunT > 0.35) Input.sprint = true;
       const sb = U.$id('stickBase');
       if (sb) sb.classList.toggle('sprint', autoRunT > 0.35);
+      if (Input._btnAds && (Input.sprint || BR.player.switchT > 0 || BR.player.state !== 'ground')) {
+        Input._btnAds = false; Input.ads = false; adsElOff();
+      }
       BRPlayer.update(BR, Math.min(dt, 0.05));
       BR.update(dt);
       // 自動拾い
@@ -380,6 +394,13 @@
     // WebGL2 が使えれば写実寄りの3D描画に切り替える（使えなければ従来の描画のまま）
     GL3D.active = GL3D.init(U.$id('gl'));
     document.body.classList.toggle('gl3d', !!GL3D.active);
+    // GPUのリセット等で描画コンテキストを失ったら、従来の描画で遊び続けられるようにする
+    U.$id('gl').addEventListener('webglcontextlost', e => {
+      e.preventDefault();
+      GL3D.active = false; GL3D.ok = false;
+      document.body.classList.remove('gl3d');
+      BRUI.clearOverlay();
+    });
     Sprites.style = 'pop';
     Render.floorGrid = true;
     Render.use3d = true;            // キャラクターを3Dモデルで描く

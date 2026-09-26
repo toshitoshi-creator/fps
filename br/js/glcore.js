@@ -161,7 +161,7 @@ out vec3 v_wp; out vec3 v_n; out vec2 v_uv; flat out float v_layer; out vec3 v_c
 void main() {
   vec4 wp = u_model * vec4(a_pos, 1.0);
   // 葉は風で少し揺らす（高い所ほど大きく）
-  if (u_wind > 0.0 && (a_layer == 9.0 || a_layer == 10.0)) {
+  if (u_wind > 0.0 && (a_layer == 9.0 || a_layer == 10.0 || a_layer == 24.0)) {
     float k = max(wp.z - 0.3, 0.0) * 0.018 * u_wind;
     wp.x += sin(u_time * 1.7 + wp.y * 0.6 + wp.x * 0.3) * k;
     wp.y += cos(u_time * 1.3 + wp.x * 0.5) * k;
@@ -189,9 +189,11 @@ void main() {
   vec4 t = texture(u_tex, vec3(v_uv, v_layer));
   if (u_cutout > 0.5 && t.a < 0.5) discard;
   // カメラのすぐ前の葉は透かす（三人称で木に寄ったときに画面が葉で埋まらないように）
-  if (v_layer == 9.0 || v_layer == 10.0) {
+  float fade = 1.0;
+  if (v_layer == 9.0 || v_layer == 10.0 || v_layer == 24.0) {
     float cd = length(u_camPos - v_wp);
-    if (cd < 1.6 && dither4(gl_FragCoord.xy) > smoothstep(0.5, 1.6, cd)) discard;
+    fade = smoothstep(0.55, 1.7, cd);
+    if (fade < 0.02) discard;
   }
   vec3 n = normalize(v_n);
   vec3 v = normalize(u_camPos - v_wp);
@@ -211,7 +213,8 @@ void main() {
     col = shade(alb, n, v_wp, spec, ao, sh);
   }
   col += alb * u_emit;
-  o = vec4(tonemap(applyFog(col, v_wp)), u_cutout > 0.5 ? clamp((t.a - 0.5) * 3.0 + 0.5, 0.0, 1.0) : 1.0);
+  float outA = u_cutout > 0.5 ? clamp((t.a - 0.5) * 3.0 + 0.5, 0.0, 1.0) : 1.0;
+  o = vec4(tonemap(applyFog(col, v_wp)), outA * fade);
 }`;
 
   /* --- 地面 --- */

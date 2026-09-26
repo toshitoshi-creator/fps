@@ -100,7 +100,7 @@ svg{display:block}
 .big-msg.show{animation:bm 1.7s ease-out}
 @keyframes bm{0%{opacity:0;transform:translateY(6px)}15%{opacity:1;transform:none}75%{opacity:1}100%{opacity:0}}
 body.scoped .tutorial,body.scoped .big-msg,body.scoped .loot-list{display:none}
-.tutorial{position:absolute;left:50%;bottom:calc(128px + var(--safe-b));transform:translateX(-50%);max-width:58%;
+.tutorial{position:absolute;left:50%;top:calc(44px + var(--safe-t));transform:translateX(-50%);max-width:52%;
   background:var(--panel2);border-left:3px solid var(--accent);padding:6px 12px;font-size:12px;z-index:26;text-align:center;border-radius:2px}
 
 /* --- 左上: キルフィード --- */
@@ -109,15 +109,18 @@ body.scoped .tutorial,body.scoped .big-msg,body.scoped .loot-list{display:none}
 .kill-feed b{font-weight:700}
 .kill-feed .mine{color:var(--accent2)}
 .kill-feed .me{color:var(--danger)}
-.feed{position:absolute;left:calc(12px + var(--safe-l));top:calc(132px + var(--safe-t));width:220px;z-index:21;font-size:11px}
+.kill-feed div:nth-child(n+5){display:none}
+.feed{position:absolute;right:calc(196px + var(--safe-r));top:calc(250px + var(--safe-t));width:190px;z-index:21;font-size:11px;text-align:right}
 .feed div{margin-bottom:2px;text-shadow:0 1px 3px #000}
+body.gl3d .chute-tag{display:none!important}
 .feed .kill{color:var(--accent2)}.feed .coin{color:#e9f5e0}.feed .warn{color:#8fc4ff}
 
 /* --- 拾えるもの --- */
 .loot-list{position:absolute;right:calc(196px + var(--safe-r));top:calc(96px + var(--safe-t));width:190px;z-index:26;display:flex;flex-direction:column;gap:3px}
 .loot-prompt,.loot-row{position:relative;display:flex;align-items:center;gap:6px;width:100%;min-height:36px;padding:4px 8px 4px 10px;
   background:var(--panel2);border-left:3px solid var(--rar,#bbb);border-radius:2px;text-align:left;pointer-events:auto}
-.lp-ico{width:18px;height:18px;flex:0 0 18px;border-radius:2px;background:var(--rar,#bbb);opacity:.9}
+.lp-ico{width:20px;height:20px;flex:0 0 20px;border-radius:2px;background:rgba(255,255,255,.1);color:var(--rar,#bbb);display:flex;align-items:center;justify-content:center}
+.lp-ico svg{width:15px;height:15px}
 .lp-name{flex:1;font-size:12px;line-height:1.15;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
 .lp-key{font-size:10px;font-weight:700;color:#111;background:var(--accent);padding:2px 6px;border-radius:2px}
 .loot-prompt:active,.loot-row:active{background:rgba(242,169,0,.35)}

@@ -157,8 +157,15 @@
       const first = list.length ? list[0].l : null;
       U.show(E.lootPrompt, !!first);
       const rar = t => (BRDATA.RARITY[t] || BRDATA.RARITY.common).color;
+      const ico = l => {
+        const it = BRDATA.ITEMS[l.id];
+        const k = l.kind === 'weapon' || l.kind === 'ammo' ? 'bullet'
+          : (it && it.kind === 'armor' ? 'vest' : (it && it.kind === 'helmet' ? 'helm' : (l.id === 'frag' ? 'frag' : 'heal')));
+        return '<svg><use href="#i-' + k + '"/></svg>';
+      };
       if (first) {
         this._set(E.lootName, 'text', first.name + (first.count > 1 ? ' ×' + first.count : ''));
+        this._set(E.lootIco, 'html', ico(first));
         E.lootPrompt.style.setProperty('--rar', rar(first.tier));
       }
       const more = list.slice(1, 4);
@@ -168,7 +175,7 @@
         this._lootRows = more.map(o => o.l);
         E.lootMore.innerHTML = more.map((o, i) =>
           '<button class="loot-row" data-loot="' + i + '" style="--rar:' + rar(o.l.tier) + '">' +
-          '<span class="lp-ico"></span><span class="lp-name">' + o.l.name + (o.l.count > 1 ? ' ×' + o.l.count : '') +
+          '<span class="lp-ico">' + ico(o.l) + '</span><span class="lp-name">' + o.l.name + (o.l.count > 1 ? ' ×' + o.l.count : '') +
           '</span><span class="lp-key">拾う</span></button>').join('');
       }
     },

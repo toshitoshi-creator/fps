@@ -460,6 +460,19 @@
   /* ================================================================
    * 木・岩・木箱・茂み・電柱
    * ============================================================== */
+  /** 枝の板（幹から外へ垂れ下がる1枚）。切り抜きの BRANCH テクスチャを貼る */
+  function branchCard(C, cx, cy, z, ang, len, wid, droop, col) {
+    const Lr = L();
+    const ca = Math.cos(ang), sa = Math.sin(ang);
+    const px = -sa, py = ca;                     // 横方向
+    const x0 = cx + ca * 0.05, y0 = cy + sa * 0.05;
+    const x1 = cx + ca * len, y1 = cy + sa * len, z1 = z - droop;
+    const hw0 = wid * 0.5, hw1 = wid * 0.28;
+    const n = [ca * 0.35, sa * 0.35, 0.94];
+    quad(C, [x0 - px * hw0, y0 - py * hw0, z + 0.02], [x1 - px * hw1, y1 - py * hw1, z1], [x1 + px * hw1, y1 + py * hw1, z1], [x0 + px * hw0, y0 + py * hw0, z + 0.02],
+      n, [0, 0, 1, 0, 1, 1, 0, 1], Lr.BRANCH, col);
+  }
+
   function nature(map, B, C, H, ground) {
     const Lr = L();
     const w = map.w;
@@ -480,20 +493,27 @@
         H[i] = h;
         if (R() < 0.8) {
           // 針葉樹
-          cylinder(B, cx, cy, -0.05, h * 0.92, 0.085, 0.03, 7, Lr.BARK, lin('#9a8a78'), false, 1);
+          cylinder(B, cx, cy, -0.05, h * 0.92, 0.085, 0.03, 7, Lr.BARK, lin('#e0d0c0'), false, 1);
           const tiers = 5;
-          const baseCol = lin(['#34502a', '#2c4724', '#3b5a2c', '#304a2a'][(R() * 4) | 0]);
+          const baseCol = lin(['#e6eedc', '#d4e0c8', '#f0f4e4', '#dce4cc'][(R() * 4) | 0]);
+          const cardCol = baseCol;
           for (let k = 0; k < tiers; k++) {
             const f = k / tiers;
             const z0 = 0.45 + f * (h - 0.9);
             const th = (h - 0.5) / tiers * 1.65;
             const r = 0.98 * (1 - f * 0.78);
-            jaggedCone(B, cx, cy, z0, th, r, 10, Lr.NEEDLE, shade(baseCol, 0.85 + f * 0.3), R);
+            // 芯は細めの円錐、その外側に垂れた枝の板を放射状に挿して輪郭をぼかす
+            jaggedCone(B, cx, cy, z0, th, r * 0.8, 12, Lr.NEEDLE, shade(baseCol, 0.8 + f * 0.25), R);
+            const nb = 7 - (k >> 1);
+            for (let j = 0; j < nb; j++) {
+              const a = j / nb * Math.PI * 2 + R() * 0.6 + k * 0.7;
+              branchCard(C, cx, cy, z0 + th * (0.30 + R() * 0.14), a, r * (1.08 + R() * 0.3), r * 1.1, r * 0.34, shade(cardCol, 0.85 + f * 0.25));
+            }
           }
         } else {
           // 白樺（白い幹 + 丸い葉の塊）
           cylinder(B, cx, cy, -0.05, h * 0.8, 0.07, 0.04, 7, Lr.WHITE, lin('#d6d0c2'), false, 1);
-          const lc = lin(['#5a8436', '#6a8f3a', '#4d7a32'][(R() * 3) | 0]);
+          const lc = lin(['#f4ffd8', '#ffffe0', '#e8f8d0'][(R() * 3) | 0]);
           for (let k = 0; k < 4; k++) {
             blob(B, cx + (R() - 0.5) * 0.7, cy + (R() - 0.5) * 0.7, h * (0.62 + R() * 0.3), 0.6 + R() * 0.3, 0.6 + R() * 0.3, 0.55 + R() * 0.25, 0.35, Lr.NEEDLE, lc, R);
           }
@@ -502,8 +522,8 @@
         if (R() < 0.6) cards(C, cx + (R() - 0.5) * 0.6, cy + (R() - 0.5) * 0.6, 0.9, 0.55, 3, Lr.LEAF, lin('#b8c89a'), R() * 3);
       } else if (kind === 2) {
         const s = 0.55 + R() * 0.35, hz = 0.55 + R() * 0.55;
-        blob(B, cx, cy, hz * 0.55, s, s * (0.8 + R() * 0.4), hz, 0.42, Lr.ROCK, lin(['#9a968c', '#8c8a82', '#a8a296'][(R() * 3) | 0]), R, true);
-        if (R() < 0.5) blob(B, cx + (R() - 0.5) * 0.6, cy + (R() - 0.5) * 0.6, 0.18, 0.35, 0.3, 0.3, 0.5, Lr.ROCK, lin('#8e8a80'), R, true);
+        blob(B, cx, cy, hz * 0.55, s, s * (0.8 + R() * 0.4), hz, 0.42, Lr.ROCK, lin(['#f2eee6', '#e2ded6', '#fffaf0'][(R() * 3) | 0]), R, true);
+        if (R() < 0.5) blob(B, cx + (R() - 0.5) * 0.6, cy + (R() - 0.5) * 0.6, 0.18, 0.35, 0.3, 0.3, 0.5, Lr.ROCK, lin('#e8e4dc'), R, true);
         H[i] = hz * 1.1;
       } else {
         const lm = nearest(x, y);
@@ -561,7 +581,7 @@
         const x = l.x + Math.cos(a) * d, y = l.y + Math.sin(a) * d;
         if (map.grid[(y | 0) * w + (x | 0)] !== 0) continue;
         const s = 0.08 + R() * 0.12;
-        blob(B, x, y, s * 0.3, s, s, s * 0.7, 0.4, Lr.ROCK, lin('#8a867c'), R, true);
+        blob(B, x, y, s * 0.3, s, s, s * 0.7, 0.4, Lr.ROCK, lin('#dcd8d0'), R, true);
       }
     });
 

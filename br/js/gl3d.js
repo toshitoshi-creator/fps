@@ -526,7 +526,7 @@
       const p = br.player;
       this.updateCamera(br);
       const cam = this.cam;
-      this._fogDen = cam.mode === 'plane' || cam.mode === 'drop' ? 0.0026 : 0.0048;
+      this._fogDen = cam.mode === 'plane' || cam.mode === 'drop' ? 0.0017 : 0.0046;
 
       // 発砲光（自分の銃口）と爆発の光
       const fl = this._flash;
@@ -671,8 +671,10 @@
       gl.uniform1f(P.u.u_cutout, 0);
       gl.uniform1f(P.u.u_wind, 1);
       gl.uniform1f(P.u.u_emit, 0);
+      gl.enable(gl.SAMPLE_ALPHA_TO_COVERAGE);        // 近くの葉を網点で透かす
       gl.bindVertexArray(this.solidMesh.vao);
       gl.drawArrays(gl.TRIANGLES, 0, this.solidMesh.count);
+      gl.disable(gl.SAMPLE_ALPHA_TO_COVERAGE);
       this.stats.draws++;
     },
 
