@@ -111,6 +111,19 @@ body.scoped .tutorial,body.scoped .big-msg,body.scoped .loot-list{display:none}
 .kill-feed div{margin-bottom:3px;padding:2px 8px;background:var(--panel);display:table;border-radius:2px}
 .kill-feed b{font-weight:700}
 .kill-feed .mine{color:var(--accent2)}
+.kill-feed .kw{display:inline-block;margin:0 4px;padding:0 4px;font-size:9px;letter-spacing:.06em;background:rgba(255,255,255,.14);border-radius:2px;color:#ddd}
+.kill-banner{position:absolute;left:50%;top:62%;transform:translateX(-50%);display:flex;align-items:center;gap:8px;z-index:26;pointer-events:none;
+  opacity:0;white-space:nowrap;text-shadow:0 1px 4px rgba(0,0,0,.8)}
+.kill-banner.show{animation:kb 2.4s ease-out}
+.kb-n{font-size:26px;font-weight:800;color:var(--danger);line-height:1}
+.kb-t{font-size:11px;font-weight:700;letter-spacing:.2em;color:var(--danger)}
+.kb-v{font-size:13px;padding-left:8px;border-left:1px solid rgba(255,255,255,.4)}
+.kb-v b{color:#fff}
+.kb-v small{margin-left:6px;font-size:10px;opacity:.75}
+@keyframes kb{0%{opacity:0;transform:translate(-50%,6px) scale(1.15)}10%{opacity:1;transform:translate(-50%,0)}80%{opacity:1}100%{opacity:0}}
+body.lowhp .lens{animation:lowhp 1.1s ease-in-out infinite;
+  background:radial-gradient(ellipse at 50% 48%,rgba(0,0,0,0) 50%,rgba(120,0,0,.28) 82%,rgba(90,0,0,.6) 100%)}
+@keyframes lowhp{50%{opacity:.55}}
 .kill-feed .me{color:var(--danger)}
 .kill-feed div:nth-child(n+5){display:none}
 .feed{position:absolute;right:calc(196px + var(--safe-r));top:calc(250px + var(--safe-t));width:190px;z-index:21;font-size:11px;text-align:right}

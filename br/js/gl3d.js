@@ -211,7 +211,7 @@
       Object.keys(this._worlds).forEach(k => {
         const w = this._worlds[k];
         if (w.lobby) return;
-        [w.terrainMesh, w.waterMesh, w.solidMesh, w.cutoutMesh].forEach(m => { if (m) { gl.deleteBuffer(m.vbo); gl.deleteVertexArray(m.vao); } });
+        [w.terrainMesh, w.waterMesh, w.solidMesh, w.cutoutMesh].forEach(m => { if (m) { gl.deleteBuffer(m.vbo); if (m.ibo) gl.deleteBuffer(m.ibo); gl.deleteVertexArray(m.vao); } });
         [w.groundTex, w.maskTex, w.shoreTex].forEach(t => t && gl.deleteTexture(t));
         delete this._worlds[k];
       });
@@ -220,7 +220,7 @@
       this.world = W;
       this.map = map;
       this.mapSeed = map.seed;
-      this.terrainMesh = GLC.mesh(gl, W.terrain.data, [['a_pos', 3], ['a_nrm', 3]]);
+      this.terrainMesh = GLC.mesh(gl, W.terrain.data, [['a_pos', 3], ['a_nrm', 3]], gl.STATIC_DRAW, W.terrain.indices);
       this.waterMesh = GLC.mesh(gl, W.water, [['a_pos', 3]]);
       this.solidMesh = GLC.mesh(gl, W.solid, this.LITL);
       this.cutoutMesh = GLC.mesh(gl, W.cutout, this.LITL);
@@ -705,8 +705,7 @@
       gl.useProgram(P.p);
       this._uniformsCommon(P);
       gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, this.groundTex); gl.uniform1i(P.u.u_ground, 2);
-      gl.bindVertexArray(this.terrainMesh.vao);
-      gl.drawArrays(gl.TRIANGLES, 0, this.terrainMesh.count);
+      GLC.draw(gl, this.terrainMesh);
       this.stats.draws++;
     },
 

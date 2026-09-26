@@ -184,29 +184,33 @@
       H[j * N + i] = -0.22 - Math.pow(dd / 14, 0.8) * 2.2 + (WorldTex.vfbm(x * 0.3, y * 0.3, 2) - 0.5) * 0.25;
     }
     const at = (i, j) => H[Math.max(0, Math.min(N - 1, j)) * N + Math.max(0, Math.min(N - 1, i))];
+    // 格子の頂点を1度ずつ作り、三角形は番号で組む（頂点処理を約1/6に）
     const B = new GLC.Builder(6);
-    const vert = (i, j) => {
+    for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
       const x = X0 + i * step, y = X0 + j * step, z = at(i, j);
       const nx = at(i - 1, j) - at(i + 1, j), ny = at(i, j - 1) - at(i, j + 1), nz = 2 * step;
       const l = Math.hypot(nx, ny, nz);
       B.push([x, y, z, nx / l, ny / l, nz / l]);
-    };
+    }
+    const idx = [];
     for (let j = 0; j < N - 1; j++) for (let i = 0; i < N - 1; i++) {
-      vert(i, j); vert(i + 1, j); vert(i + 1, j + 1);
-      vert(i, j); vert(i + 1, j + 1); vert(i, j + 1);
+      const a = j * N + i, b = a + 1, c = a + N + 1, d = a + N;
+      idx.push(a, b, c, a, c, d);
     }
     // 外周の海底（遠くまで。水面の下にあるので粗くてよい）
-    const R = 600, z = -3.2, c = map.w / 2;
+    const R = 600, z = -3.2, cc = map.w / 2;
     const ring = [[X0, X0], [X1, X0], [X1, X1], [X0, X1]];
-    const far = [[c - R, c - R], [c + R, c - R], [c + R, c + R], [c - R, c + R]];
+    const far = [[cc - R, cc - R], [cc + R, cc - R], [cc + R, cc + R], [cc - R, cc + R]];
     for (let k = 0; k < 4; k++) {
       const a = ring[k], b = ring[(k + 1) % 4], fa = far[k], fb = far[(k + 1) % 4];
       [[a, b, fb], [a, fb, fa]].forEach(t => t.forEach(p => {
         const inner = p === a || p === b;
+        idx.push(B.n / 6);
         B.push([p[0], p[1], inner ? -2.4 : z, 0, 0, 1]);
       }));
     }
-    return { data: B.data(), H, N, X0 };
+    const indices = (B.n / 6) > 65535 ? new Uint32Array(idx) : new Uint16Array(idx);
+    return { data: B.data(), indices, H, N, X0 };
   }
 
   function water(map) {

@@ -486,6 +486,7 @@ void main() {
   float fade = 1.0 - smoothstep(2.0, 45.0, v_wp.z);
   float d = length(u_camPos - v_wp);
   float nearK = smoothstep(0.0, 5.0, d) * (1.0 - smoothstep(60.0, 140.0, d) * 0.6);
+  grid *= 1.0 - smoothstep(12.0, 45.0, d);          // 遠くの格子は線がちらつくので消す
   float a = (0.10 + grid + wave * 0.06) * fade * nearK;
   vec3 c = vec3(0.16, 0.36, 1.0) * (1.3 + grid * 3.0);
   o = vec4(tonemap(c), clamp(a, 0.0, 0.85));
@@ -545,7 +546,7 @@ void main() { o = vec4(1.0); }`;
    * 頂点配列を作る。layout は [名前, 要素数] の並び。
    * @returns {{vao, vbo, count, stride, layout}}
    */
-  function mesh(gl, data, layout, usage) {
+  function mesh(gl, data, layout, usage, indices) {
     const vao = gl.createVertexArray();
     gl.bindVertexArray(vao);
     const vbo = gl.createBuffer();
@@ -560,8 +561,22 @@ void main() { o = vec4(1.0); }`;
       gl.vertexAttribPointer(loc, l[1], gl.FLOAT, false, stride * 4, off * 4);
       off += l[1];
     });
+    let ibo = null, itype = 0, icount = 0;
+    if (indices) {
+      ibo = gl.createBuffer();
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo);
+      gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.STATIC_DRAW);
+      itype = indices instanceof Uint32Array ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT;
+      icount = indices.length;
+    }
     gl.bindVertexArray(null);
-    return { vao, vbo, count: data.length / stride, stride, layout, cap: data.length };
+    return { vao, vbo, ibo, itype, icount, count: data.length / stride, stride, layout, cap: data.length };
+  }
+  /** メッシュを描く（番号付きなら drawElements） */
+  function draw(gl, m) {
+    gl.bindVertexArray(m.vao);
+    if (m.ibo) gl.drawElements(gl.TRIANGLES, m.icount, m.itype, 0);
+    else gl.drawArrays(gl.TRIANGLES, 0, m.count);
   }
   /** 動的メッシュの中身を差し替える（容量が足りなければ作り直す） */
   function update(gl, m, data, n) {
@@ -590,5 +605,5 @@ void main() { o = vec4(1.0); }`;
   };
   Builder.prototype.data = function () { return this.a.subarray(0, this.n); };
 
-  g.GLC = { M4, lin, SRC, program, mesh, update, Builder, ATTRS };
+  g.GLC = { M4, lin, SRC, program, mesh, update, draw, Builder, ATTRS };
 })(window);

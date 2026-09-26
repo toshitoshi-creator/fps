@@ -425,8 +425,10 @@
         if (src.isPlayer) this.stats.kills++;
       }
       this.dropLoot(target);
+      const kw = src && src.weapons ? src.weapons[src.wIdx] : null;
       this.killFeed.unshift({
         killer: src ? src.name : 'ZONE', victim: target.name, t: 3.5,
+        weapon: src ? (kw ? kw.def.short : '素手') : 'ZONE',
         byPlayer: !!(src && src.isPlayer), victimPlayer: target.isPlayer
       });
       if (this.killFeed.length > 6) this.killFeed.pop();

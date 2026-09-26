@@ -76,8 +76,8 @@
       Snd.play(victim.isPlayer ? 'gameover' : 'enemy_die', { vol: victim.isPlayer ? 1 : 0.5 });
       BR.bloodAt(victim.x, victim.y, 0.6, 18, victim.def.palette.trim);
       if (src && src.isPlayer) {
-        BRUI.bigMsg('ELIMINATED  ' + victim.name);
-        BRUI.feed('撃破 ' + victim.name, 'kill');
+        const kw = src.weapons[src.wIdx];
+        BRUI.killBanner(victim.name, kw ? kw.def.name : '', BR.stats.kills);
         BR.addShake(0.9);
         BR.hitstop = Math.max(BR.hitstop, 0.05);
         Haptics.tap('kill');

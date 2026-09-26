@@ -61,6 +61,7 @@
       this._set(E.hpNum, 'text', '' + Math.ceil(Math.max(0, p.hp)));
       this._set(E.hpFill, 'w', (hpR * 100).toFixed(1) + '%');
       E.hpFill.classList.toggle('low', hpR < 0.32);
+      document.body.classList.toggle('lowhp', hpR < 0.3 && p.alive && p.state === 'ground');
       this._set(E.apFill, 'w', (p.armorMax ? U.clamp(p.armor / p.armorMax, 0, 1) * 100 : 0).toFixed(1) + '%');
       const alv = this.armorLevel(p);
       this._set(E.gearArmor.querySelector('b'), 'text', alv ? 'Lv' + alv : '—');
@@ -186,7 +187,7 @@
       this._kfKey = key;
       this.el.killFeed.innerHTML = br.killFeed.map(k =>
         '<div class="' + (k.byPlayer ? 'mine' : (k.victimPlayer ? 'me' : '')) + '">' +
-        '<b>' + k.killer + '</b> <span style="opacity:.6">✚</span> ' + k.victim + '</div>').join('');
+        '<b>' + k.killer + '</b> <span class="kw">' + (k.weapon || '✚') + '</span> ' + k.victim + '</div>').join('');
     },
 
     feed(text, cls) {
@@ -196,6 +197,15 @@
       this.el.feed.appendChild(d);
       while (this.el.feed.children.length > 5) this.el.feed.removeChild(this.el.feed.firstChild);
       setTimeout(() => { if (d.parentNode) d.parentNode.removeChild(d); }, 2600);
+    },
+
+    /** 撃破のお知らせ（画面中央の下）。何人目か・相手・武器 */
+    killBanner(name, weapon, kills) {
+      const e = this.el.killBanner || (this.el.killBanner = U.$id('killBanner'));
+      if (!e) return;
+      e.innerHTML = '<span class="kb-n">' + kills + '</span><span class="kb-t">KILL</span>' +
+        '<span class="kb-v"><b>' + name + '</b> を倒した' + (weapon ? '<small>' + weapon + '</small>' : '') + '</span>';
+      e.classList.remove('show'); void e.offsetWidth; e.classList.add('show');
     },
 
     bigMsg(t) {
@@ -234,6 +244,9 @@
     drawOverlay(br) {
       const o = this._ovl || (this._ovl = U.$id('ovl'));
       if (!o) return;
+      // 描く物が無いフレームは、前に描いた物を1度消すだけにする
+      const markerOn = this.marker && br.player && br.player.state === 'ground';
+      if (!br.dmgNums.length && !markerOn) { this.clearOverlay(); return; }
       const x = o.getContext('2d');
       x.clearRect(0, 0, o.width, o.height);
       this._ovlDirty = true;
