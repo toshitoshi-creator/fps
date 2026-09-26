@@ -313,7 +313,7 @@ iPhone・iPad Pro の Polycam / Scaniverse / 3d Scanner App から書き出し�
 ```bash
 node test/playtest.js       # 194項目: STEEL PROTOCOL（起動〜通しプレイ〜セーブ〜スキン切替）
 node test/brtest.js         # 276項目: LAST ISLAND（輸送機〜降下〜漁り〜戦闘〜Zone〜勝敗〜報酬＋3Dと質感）
-node test/gltest.js         # 78項目: LAST ISLAND の WebGL2 描画（カメラ・3D当たり判定・装備の見た目・影・HUD）
+node test/gltest.js         # 80項目: LAST ISLAND の WebGL2 描画（カメラ・3D当たり判定・装備の見た目・影・HUD）
 node test/tooltest.js       # 40項目: スキャン変換ツール〜ゲームへの登録〜実プレイ
 node test/scan2map.test.js  # 35項目: 合成LiDARスキャンからの間取り復元精度（Node単体）
 node test/balance.js 5      # 凡庸なボットで全ステージを自動プレイし難易度を計測

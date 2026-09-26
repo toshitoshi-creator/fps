@@ -32,7 +32,8 @@
   const PERM = new Float32Array(65536);
   (function () { const r = mulberry(1337); for (let i = 0; i < PERM.length; i++) PERM[i] = r(); })();
   function lat(x, y, p) {
-    x = ((x % p) + p) % p; y = ((y % p) + p) % p;
+    if ((p & (p - 1)) === 0) { x &= p - 1; y &= p - 1; }        // 2のべき乗は剰余の代わりにマスク
+    else { x = ((x % p) + p) % p; y = ((y % p) + p) % p; }
     return PERM[((x * 374761) ^ (y * 668265)) & 65535];
   }
   /** 周期 p で繰り返す値ノイズ（タイル可能） */
@@ -223,19 +224,27 @@
     }
     put(o, 64 * shade + 10, 108 * shade + 16, 54 * shade + 8, a);
   };
-  // 茂みの葉（切り抜き）
-  MAKERS[L.LEAF] = (u, v, o, px, py) => {
-    let a = 0;
-    const r = mulberry(7), N = 90;
-    // 葉を散らす（決定的）。重い処理なので簡易な楕円判定
-    const cell = MAKERS._leafCells || (MAKERS._leafCells = (() => {
-      const arr = [];
-      for (let i = 0; i < N; i++) arr.push([r(), r() * 0.85 + 0.12, 0.035 + r() * 0.035, r() * Math.PI, r()]);
-      return arr;
+  // 茂みの葉（切り抜き）。葉は 8x8 の区画に登録しておき、画素ごとに近くの葉だけ調べる
+  MAKERS[L.LEAF] = (u, v, o) => {
+    const G = MAKERS._leafGrid || (MAKERS._leafGrid = (() => {
+      const r = mulberry(7), N = 90, cells = [];
+      for (let i = 0; i < 64; i++) cells.push([]);
+      for (let i = 0; i < N; i++) {
+        const lf = [r(), r() * 0.85 + 0.12, 0.035 + r() * 0.035, r() * Math.PI, r()];
+        const ext = lf[2] + 0.01;
+        for (let gy = Math.floor((lf[1] - ext) * 8); gy <= Math.floor((lf[1] + ext) * 8); gy++) {
+          if (gy < 0 || gy > 7) continue;
+          for (let gx = Math.floor((lf[0] - ext) * 8); gx <= Math.floor((lf[0] + ext) * 8); gx++) {
+            cells[gy * 8 + ((gx % 8) + 8) % 8].push(lf);
+          }
+        }
+      }
+      return cells;
     })());
-    let best = 0;
-    for (let i = 0; i < cell.length; i++) {
-      const lf = cell[i];
+    let a = 0, best = 0;
+    const list = G[Math.min(7, (v * 8) | 0) * 8 + Math.min(7, (u * 8) | 0)];
+    for (let i = 0; i < list.length; i++) {
+      const lf = list[i];
       let dx = u - lf[0], dy = v - lf[1];
       if (dx > 0.5) dx -= 1; if (dx < -0.5) dx += 1;
       const ca = Math.cos(lf[3]), sa = Math.sin(lf[3]);
@@ -362,7 +371,9 @@
   function layers() {
     if (_layerCache) return _layerCache;
     const out = [];
-    for (let i = 0; i < LAYERS; i++) out.push(layer(MAKERS[i] || MAKERS[L.WHITE]));
+    const times = [];
+    for (let i = 0; i < LAYERS; i++) { const t0 = performance.now(); out.push(layer(MAKERS[i] || MAKERS[L.WHITE])); times.push(i + ':' + (performance.now() - t0).toFixed(0)); }
+    WorldTex.layerTimes = times.join(' ');
     _layerCache = out;
     return out;
   }

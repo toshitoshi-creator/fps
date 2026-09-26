@@ -65,6 +65,7 @@
       if (deny || (soft && !force)) { this.ok = false; return false; }
       this.gl = gl;
       try {
+        const T0 = performance.now();
         const S = GLC.SRC;
         this.P = {
           lit: GLC.program(gl, S.litVS, S.litFS),
@@ -78,9 +79,12 @@
           depth: GLC.program(gl, S.depthVS, S.depthFS),
           depthChar: GLC.program(gl, S.depthCharVS, S.depthFS)
         };
+        const T1 = performance.now();
         this._makeTextures();
+        const T2 = performance.now();
         this._makeShadow(2048);
         this._makeCommonMeshes();
+        this.stats.shaderMs = T1 - T0; this.stats.texMs = T2 - T1; this.stats.initMs = performance.now() - T0;
       } catch (e) {
         console.warn('[GL3D] 初期化に失敗したため従来描画に戻します', e);
         this.ok = false;
