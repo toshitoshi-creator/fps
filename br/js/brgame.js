@@ -809,7 +809,7 @@
       c.atkFlash = 0.18;
       c.recoilVis = Math.min(3.2, c.recoilVis + w.def.recoil * 0.9);
       const rc = w.def.recoil * 0.004;
-      c.pitch = U.clamp(c.pitch + rc, -0.42, 0.42);
+      c.pitch = U.clamp(c.pitch + rc, -0.62, 0.62);
       c.recoilPitch -= rc;
       const ry = (Math.random() - 0.5) * rc * 0.9;
       c.ang += ry; c.recoilYaw -= ry;
@@ -976,8 +976,9 @@
 
     trimParts() { if (this.parts.length > 220) this.parts.splice(0, this.parts.length - 220); },
 
-    addTracer(sx0, sy0, x1, y1, z1, color) {
-      this.tracers.push({ alive: true, sx0, sy0, x1, y1, z1, color: color || '#fff', life: 0.07, maxLife: 0.07 });
+    addTracer(sx0, sy0, x1, y1, z1, color, src) {
+      // src: 撃った人（3D描画では銃口から弾道を引く）
+      this.tracers.push({ alive: true, sx0, sy0, x1, y1, z1, color: color || '#fff', src: src || null, life: 0.11, maxLife: 0.11 });
       if (this.tracers.length > 40) this.tracers.shift();
     },
 

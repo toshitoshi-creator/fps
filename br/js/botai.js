@@ -173,7 +173,7 @@
         if (target.isPlayer) br.emit('player_shot_by', b, dmg);
       }
       // 視覚用の弾道
-      br.addTracer(0, 0, target.x + U.rand(-0.4, 0.4), target.y + U.rand(-0.4, 0.4), 0.6, w.def.color);
+      br.addTracer(0, 0, target.x + U.rand(-0.4, 0.4), target.y + U.rand(-0.4, 0.4), U.rand(0.3, 0.9), w.def.color, b);
       b.bot.fireHold = U.rand(0.08, 0.3);
     },
 

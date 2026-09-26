@@ -20,7 +20,7 @@
       settings: {
         sens: 200, adsSens: 70, aim: 'MED', gyro: 'OFF', gyroSens: 100,
         quality: 'AUTO', btnScale: 100, btnOpacity: 100, autoPick: 1,
-        sfx: 1, bgm: 1, vibrate: 1, lefty: 0, bots: 15
+        sfx: 1, bgm: 1, vibrate: 1, lefty: 0, bots: 15, view: 'TPP'
       }
     };
   }
@@ -52,6 +52,7 @@
       if (!AIM[this.data.settings.aim]) this.data.settings.aim = 'MED';
       if (GYRO.indexOf(this.data.settings.gyro) < 0) this.data.settings.gyro = 'OFF';
       this.data.settings.bots = U.clamp(this.data.settings.bots | 0, 5, 29) || 15;
+      if (this.data.settings.view !== 'FPP') this.data.settings.view = 'TPP';
       this.rollMissions();
       return this.data;
     },

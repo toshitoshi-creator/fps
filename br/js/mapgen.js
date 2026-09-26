@@ -94,7 +94,7 @@
           for (let x = bx - 1; x <= bx + bw + 1; x++)
             if (at(x, y) === WATER) { ok = false; break; }
         if (!ok) continue;
-        const r = { x: bx, y: by, bw, bh };
+        const r = { x: bx, y: by, bw, bh, area: l.area, key: l.key, partX: -1 };
         if (overlaps(r)) continue;
         rects.push(r);
 
@@ -113,6 +113,7 @@
         // 内部の間仕切り（通り抜けられる隙間を必ず残す）
         if (bw >= 9 && rnd() < 0.6) {
           const mx = bx + 3 + ((rnd() * (bw - 6)) | 0);
+          r.partX = mx;
           for (let y = by + 1; y < by + bh - 1; y++) set(mx, y, BUILD);
           const gap = by + 1 + ((rnd() * (bh - 3)) | 0);
           set(mx, gap, 0); set(mx, gap + 1, 0);
@@ -134,19 +135,22 @@
     });
 
     /* --- 木・岩・コンテナ --- */
-    function scatter(l, count, tile) {
+    // 見た目の種類（描画専用）。1=木 2=岩 3=木箱 — 当たり判定はタイルのまま
+    const deco = new Uint8Array(w * h);
+    function scatter(l, count, tile, kind) {
       for (let i = 0; i < count; i++) {
         const ang = rnd() * Math.PI * 2, dist = Math.sqrt(rnd()) * l.r;
         const x = Math.round(l.x + Math.cos(ang) * dist);
         const y = Math.round(l.y + Math.sin(ang) * dist);
         if (at(x, y) !== 0) continue;
         set(x, y, tile);
+        deco[y * w + x] = kind;
       }
     }
     landmarks.forEach(l => {
-      if (l.def.trees) scatter(l, l.def.trees, ROCK);
-      if (l.def.rocks) scatter(l, l.def.rocks, ROCK);
-      if (l.def.crates) scatter(l, l.def.crates, CRATE);
+      if (l.def.trees) scatter(l, l.def.trees, ROCK, 1);
+      if (l.def.rocks) scatter(l, l.def.rocks, ROCK, 2);
+      if (l.def.crates) scatter(l, l.def.crates, CRATE, 3);
     });
 
     /* --- 屋外のLoot --- */
@@ -208,7 +212,7 @@
     }
 
     return {
-      w, h, grid, seed, landmarks, lootSpots: reachable, spawnable,
+      w, h, grid, seed, landmarks, lootSpots: reachable, spawnable, buildings: rects, deco,
       walkable: q.length, center: { x: cx, y: cy }, baseR
     };
   }

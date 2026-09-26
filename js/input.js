@@ -48,7 +48,7 @@
       this.move.x = this.move.y = 0;
       this.look.dx = this.look.dy = 0;
       this.fire = false; this.sprint = false; this.ads = false;
-      this._btnFire = false; this._mouseFire = false; this._btnSprint = false;
+      this._btnFire = false; this._btnFire2 = false; this._mouseFire = false; this._btnSprint = false;
       this._btnAds = false;
       this._stickId = this._lookId = null;
       if (this._els.base) this._els.base.classList.add('hidden');

@@ -33,7 +33,7 @@
       p.ang += p.recoilYaw * dt * 9;
       p.recoilPitch *= Math.max(0, 1 - dt * 9);
       p.recoilYaw *= Math.max(0, 1 - dt * 9);
-      p.pitch = U.clamp(p.pitch, -0.42, 0.42);
+      p.pitch = U.clamp(p.pitch, -0.62, 0.62);
       if (p.ang > Math.PI) p.ang -= U.TAU; else if (p.ang < -Math.PI) p.ang += U.TAU;
 
       if (p.state !== 'ground') { p.moving = false; return; }
@@ -141,7 +141,7 @@
         }
         const res = this.hitscan(br, W / 2 + ox, H / 2 + oy, w);
         if (res.hit) { anyHit = true; if (res.head) anyHead = true; }
-        br.addTracer(muzzleSx, muzzleSy, res.wx, res.wy, res.wz, w.def.color);
+        br.addTracer(muzzleSx, muzzleSy, res.wx, res.wy, res.wz, w.def.color, br.player);
       }
       if (anyHit) {
         p.hits++;
@@ -150,7 +150,32 @@
       }
     },
 
+    /** WebGL描画中は、描いたのと同じカメラと人物の骨で3Dの当たりを取る */
     hitscan(br, sx, sy, w) {
+      if (g.GL3D && GL3D.ok && GL3D.active) return this.hitscan3D(br, sx, sy, w);
+      return this.hitscan2D(br, sx, sy, w);
+    },
+
+    hitscan3D(br, sx, sy, w) {
+      const r = GL3D.hitscan(br, sx, sy, w, this.aimAssist);
+      if (r.hit) {
+        const c = r.c;
+        const dist = U.dist(br.player.x, br.player.y, c.x, c.y);
+        let dmg = w.def.damage * (r.leg ? 0.8 : 1);
+        if (dist > w.def.range) {
+          dmg *= U.clamp(1 - (dist - w.def.range) / (w.def.range * 1.1), w.def.falloff, 1);
+        }
+        const dealt = br.damage(c, dmg, br.player, r.head, w.def.headMul);
+        br.addDamageNumber(r.wx, r.wy, r.wz + 0.12, r.head ? dealt + '!' : '' + dealt, r.head);
+        br.bloodAt(r.wx, r.wy, r.wz, r.head ? 12 : 7, '#8a1010');
+        return { hit: true, head: r.head, wx: r.wx, wy: r.wy, wz: r.wz };
+      }
+      if (r.wall) br.impact(r.wx, r.wy, U.clamp(r.wz, 0.02, 4), '#ffd9a0');
+      else if (r.wz < 0.08) br.dustAt(r.wx, r.wy, 0.02, 3, 0.5);
+      return { hit: false, head: false, wx: r.wx, wy: r.wy, wz: r.wz };
+    },
+
+    hitscan2D(br, sx, sy, w) {
       const cam = Render.cam, W = Render.W;
       const camX = 2 * sx / W - 1;
       const rdx = cam.dirX + cam.planeX * camX;
