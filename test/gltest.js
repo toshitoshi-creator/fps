@@ -291,6 +291,38 @@ function section(t) { results.push('\n\x1b[36m▌' + t + '\x1b[0m'); }
     return { found: false };
   });
   ok('壁の向こうの相手には当たらない', wall.found && !wall.hit && wall.wall, JSON.stringify(wall));
+  const tree = await G(() => {
+    const BR = __br.BR, p = BR.player, m = BR.map, GL = __br.GL3D, T = __t;
+    GL.view = 'FPP';
+    const keys = Object.keys(GL.props || {});
+    for (const k of keys) {
+      const pr = GL.props[k];
+      if (pr.t !== 'cyl' || pr.r > 0.2) continue;                 // 木の幹だけ
+      const i = +k, cxI = i % m.w, cyI = (i / m.w) | 0;
+      // 南北に並んだ通り道が空いている木を探す（木のセルだけは通る）
+      let clear = true;
+      for (let y = cyI - 4; y <= cyI + 5 && clear; y++) {
+        if (y === cyI) continue;
+        if (BR.solidAt(cxI + 0.5, y + 0.5)) clear = false;
+      }
+      if (!clear) continue;
+      const run = off => {
+        p.x = pr.cx + off; p.y = cyI + 5.3; p.ang = -Math.PI / 2; p.pitch = 0;
+        const e = BR.bots[0];
+        e.x = pr.cx + off; e.y = cyI - 3.2; e.state = 'ground'; e.alive = true; e.hp = 100; e.stance = 'stand';
+        T.frame();
+        const b = e._gl.caps.find(c => c.k === 'body');
+        const bc = [(b.a[0] + b.b[0]) / 2, (b.a[1] + b.b[1]) / 2, (b.a[2] + b.b[2]) / 2 - 0.08];
+        const s2 = T.aim(bc[0], bc[1], bc[2]);
+        return GL.hitscan(BR, s2.sx, s2.sy, BR.player.weapons[0], 1.0);
+      };
+      const through = run(0), past = run(0.36);
+      return { found: true, trunkBlocks: !through.hit && through.prop === 'cyl', pastHits: past.hit };
+    }
+    return { found: false };
+  });
+  ok('木の幹は弾を止める', tree.found && tree.trunkBlocks, JSON.stringify(tree));
+  ok('幹の横（葉の部分）は弾が抜ける', tree.found && tree.pastHits);
   const fire = await G(async () => {
     const BR = __br.BR, p = BR.player, T = __t;
     const spot = T.open(5);

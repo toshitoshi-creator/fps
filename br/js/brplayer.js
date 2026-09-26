@@ -170,8 +170,12 @@
         br.bloodAt(r.wx, r.wy, r.wz, r.head ? 12 : 7, '#8a1010');
         return { hit: true, head: r.head, wx: r.wx, wy: r.wy, wz: r.wz };
       }
-      if (r.wall) br.impact(r.wx, r.wy, U.clamp(r.wz, 0.02, 4), '#ffd9a0');
-      else if (r.wz < 0.08) br.dustAt(r.wx, r.wy, 0.02, 3, 0.5);
+      if (r.wall) {
+        br.impact(r.wx, r.wy, U.clamp(r.wz, 0.02, 4), r.prop === 'cyl' ? '#c8b89a' : '#ffd9a0');
+        // 弾痕は平らな面（壁・木箱・地面）にだけ残す
+        if (r.prop !== 'cyl' && r.n[2] < 0.5) GL3D.addDecal(r.wx, r.wy, r.wz, r.n);
+      }
+      else if (r.wz < 0.08) { br.dustAt(r.wx, r.wy, 0.02, 3, 0.5); GL3D.addDecal(r.wx, r.wy, 0.004, [0, 0, 1]); }
       return { hit: false, head: false, wx: r.wx, wy: r.wy, wz: r.wz };
     },
 

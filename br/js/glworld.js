@@ -473,7 +473,7 @@
       n, [0, 0, 1, 0, 1, 1, 0, 1], Lr.BRANCH, col);
   }
 
-  function nature(map, B, C, H, ground) {
+  function nature(map, B, C, H, ground, PROPS) {
     const Lr = L();
     const w = map.w;
     const nearest = (x, y) => {
@@ -491,6 +491,7 @@
       if (kind === 1) {
         const h = 3.0 + R() * 1.8;
         H[i] = h;
+        PROPS[i] = { t: 'cyl', cx, cy, r: 0.11, h };           // 弾を止めるのは幹だけ（葉は抜ける）
         if (R() < 0.8) {
           // 針葉樹
           cylinder(B, cx, cy, -0.05, h * 0.92, 0.085, 0.03, 7, Lr.BARK, lin('#e0d0c0'), false, 1);
@@ -525,6 +526,7 @@
         blob(B, cx, cy, hz * 0.55, s, s * (0.8 + R() * 0.4), hz, 0.42, Lr.ROCK, lin(['#f2eee6', '#e2ded6', '#fffaf0'][(R() * 3) | 0]), R, true);
         if (R() < 0.5) blob(B, cx + (R() - 0.5) * 0.6, cy + (R() - 0.5) * 0.6, 0.18, 0.35, 0.3, 0.3, 0.5, Lr.ROCK, lin('#e8e4dc'), R, true);
         H[i] = hz * 1.1;
+        PROPS[i] = { t: 'cyl', cx, cy, r: s * 0.86, h: hz * 1.05 };
       } else {
         const lm = nearest(x, y);
         const ang = (R() - 0.5) * 0.5;
@@ -533,6 +535,7 @@
           const col = lin(['#8a3a2e', '#2e5a8a', '#3a6a3a', '#a07a2a', '#6a6e72'][(R() * 5) | 0]);
           obox(B, cx, cy, 0, 0.5, 0.46, 1.25, ang * 0.3, Lr.METAL, col, 1);
           H[i] = 1.25;
+          PROPS[i] = { t: 'box', cx, cy, hx: 0.5, hy: 0.46, h: 1.25, hx2: 0, h2: 0 };
         } else if (lm.key === 'industrial' && R() < 0.5) {
           // ドラム缶の山
           const col = lin(['#2e5a8a', '#8a2e2e', '#c8a032', '#3a6a3a'][(R() * 4) | 0]);
@@ -542,12 +545,15 @@
           }
           cylinder(B, cx, cy, 0.58, 1.16, 0.2, 0.2, 10, Lr.BARREL, col, true, 1);
           H[i] = 1.16;
+          PROPS[i] = { t: 'box', cx, cy, hx: 0.42, hy: 0.42, h: 0.58, hx2: 0.2, h2: 1.16 };
         } else {
           // 木箱の積み上げ（軍用は緑）
           const col = lm.key === 'military' ? lin('#8a9a6a') : lin('#ffffff');
           obox(B, cx, cy, 0, 0.44, 0.44, 0.62, ang, Lr.CRATE, col, 1);
-          if (R() < 0.8) obox(B, cx + (R() - 0.5) * 0.12, cy + (R() - 0.5) * 0.12, 0.62, 0.36, 0.36, 0.56, ang + (R() - 0.5) * 0.6, Lr.CRATE, col, 1);
+          const two = R() < 0.8;
+          if (two) obox(B, cx + (R() - 0.5) * 0.12, cy + (R() - 0.5) * 0.12, 0.62, 0.36, 0.36, 0.56, ang + (R() - 0.5) * 0.6, Lr.CRATE, col, 1);
           H[i] = 1.2;
+          PROPS[i] = { t: 'box', cx, cy, hx: 0.44, hy: 0.44, h: 0.62, hx2: two ? 0.36 : 0, h2: two ? 1.18 : 0 };
         }
       }
     }
@@ -632,13 +638,14 @@
     const ground = WorldTex.paintGround(map, map.lobby ? 512 : 1024);
     const tileH = new Float32Array(map.w * map.h);
     const solid = new GLC.Builder(LIT), cutout = new GLC.Builder(LIT);
+    const props = {};
     buildings(map, solid, tileH);
-    nature(map, solid, cutout, tileH, ground);
+    nature(map, solid, cutout, tileH, ground, props);
     hills(map, solid);
     // 念のため: 高さ未設定の固いセルは 1.2 として扱う
     for (let i = 0; i < tileH.length; i++) if (map.grid[i] && map.grid[i] !== 4 && !tileH[i]) tileH[i] = 1.2;
     const ter = terrain(map, ground);
-    return { ground, terrain: ter, water: water(map), solid: solid.data(), cutout: cutout.data(), tileH };
+    return { ground, terrain: ter, water: water(map), solid: solid.data(), cutout: cutout.data(), tileH, props };
   }
 
   g.GLWorld = { build, box, obox, cylinder, blob, quad, tri, cards, LIT, CZ, DOOR_H };

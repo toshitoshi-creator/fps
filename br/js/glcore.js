@@ -444,8 +444,11 @@ void main() {
     float ang = atan(p.y, p.x);
     float spikes = pow(abs(cos(ang * 3.0)), 12.0) * 0.8 + 0.25;
     a = smoothstep(spikes, 0.0, r) + smoothstep(0.35, 0.0, r);
-  } else {                        // 四角（破片）
+  } else if (v_shape < 4.5) {     // 四角（破片）
     a = step(max(abs(p.x), abs(p.y)), 0.8);
+  } else {                        // 弾痕: 黒い芯と、少し明るい欠けた縁
+    float r = length(p);
+    a = smoothstep(1.0, 0.75, r) * (0.35 + 0.65 * smoothstep(0.62, 0.35, r));
   }
   vec4 c = v_col;
   if (u_add > 0.5) {

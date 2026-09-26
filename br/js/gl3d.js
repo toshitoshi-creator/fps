@@ -194,7 +194,7 @@
      * マップ
      * =============================================================== */
     _worlds: {},
-    _WKEYS: ['world', 'map', 'terrainMesh', 'waterMesh', 'solidMesh', 'cutoutMesh', 'groundTex', 'maskTex', 'shoreTex', 'tileH', 'mapCanvas'],
+    _WKEYS: ['world', 'map', 'terrainMesh', 'waterMesh', 'solidMesh', 'cutoutMesh', 'groundTex', 'maskTex', 'shoreTex', 'tileH', 'props', 'mapCanvas'],
     setMap(map) {
       if (!this.ok || !map) return;
       if (this.map === map && this.world) return;
@@ -237,6 +237,7 @@
       sx.putImageData(id, 0, 0);
       this.shoreTex = this._tex2D(sc, false, false);
       this.tileH = W.tileH;
+      this.props = W.props;
       this.stats.buildMs = performance.now() - t0;
       this.stats.solidTris = W.solid.length / 12 / 3;
       // 地図（UI用）も同じ地表から作る
@@ -888,6 +889,14 @@
       });
     },
 
+    /** 弾痕（壁・地面に残る小さな穴。古い物から消える） */
+    _decals: [],
+    addDecal(x, y, z, n) {
+      if (!n) return;
+      this._decals.push({ x: x + n[0] * 0.02, y: y + n[1] * 0.02, z: z + n[2] * 0.02, n: n.slice(), t: 0, s: 0.032 + Math.random() * 0.012, r: Math.random() * 6.28 });
+      if (this._decals.length > 90) this._decals.shift();
+    },
+
     /** 爆発の閃光（加算の大きな光球 + 周りを照らす） */
     _blasts: [],
     addBlast(x, y, z) {
@@ -1008,6 +1017,22 @@
           this._billboard(pt.x, pt.y, pt.z, pt.size * 2.4, [0.35, 0.02, 0.02], k * 0.9, 0);
         }
       });
+      // 弾痕（半透明。法線の向きに貼る）
+      const dts = 1 / 60;
+      this._decals.forEach(dc => {
+        dc.t += dts;
+        const a = clamp(1 - (dc.t - 25) / 5, 0, 1) * 0.9;
+        if (a <= 0) return;
+        const n = dc.n;
+        let rx, ry, rz, ux, uy, uz;
+        if (Math.abs(n[2]) > 0.5) { rx = 1; ry = 0; rz = 0; ux = 0; uy = 1; uz = 0; }
+        else { rx = -n[1]; ry = n[0]; rz = 0; ux = 0; uy = 0; uz = 1; }
+        const c = Math.cos(dc.r), sn = Math.sin(dc.r);
+        const Rx = rx * c + ux * sn, Ry = ry * c + uy * sn, Rz = rz * c + uz * sn;
+        const Ux = ux * c - rx * sn, Uy = uy * c - ry * sn, Uz = uz * c - rz * sn;
+        this._fxPush(dc.x, dc.y, dc.z, dc.s, dc.s, [0.03, 0.028, 0.025], a, 5, Rx, Ry, Rz, Ux, Uy, Uz);
+      });
+      this._decals = this._decals.filter(dc => dc.t < 30);
       const nAlpha = this._fxN;
       void alpha;
       // 2) 加算（火花・弾道・マズルフラッシュ）
@@ -1073,7 +1098,9 @@
       if (nAlpha > 0) {
         gl.uniform1f(P.u.u_add, 0);
         gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+        gl.enable(gl.POLYGON_OFFSET_FILL); gl.polygonOffset(-1, -2);
         gl.drawArrays(gl.TRIANGLES, 0, nAlpha / 10);
+        gl.disable(gl.POLYGON_OFFSET_FILL);
       }
       if (n > nAlpha) {
         gl.uniform1f(P.u.u_add, 1);
@@ -1279,6 +1306,9 @@
     rayWorld(br, o, d, maxT) {
       const map = br.map, H = this.tileH;
       let t = maxT;
+      const N = this._rayN || (this._rayN = [0, 0, 1]);
+      N[0] = 0; N[1] = 0; N[2] = 1;
+      this._rayTile = 0; this._rayProp = null;
       // 地面
       if (d[2] < -1e-4) t = Math.min(t, -o[2] / d[2]);
       // グリッドを水平に辿り、セルの高さより下を通るなら当たり
@@ -1290,30 +1320,93 @@
         let stepX, stepY, sdx, sdy;
         if (rdx < 0) { stepX = -1; sdx = (o[0] - mapX) * ddx; } else { stepX = 1; sdx = (mapX + 1 - o[0]) * ddx; }
         if (rdy < 0) { stepY = -1; sdy = (o[1] - mapY) * ddy; } else { stepY = 1; sdy = (mapY + 1 - o[1]) * ddy; }
-        let hd = 0;
+        let hd = 0, side = 0;
         for (let guard = 0; guard < 400; guard++) {
           const enter = hd;
-          if (sdx < sdy) { hd = sdx; sdx += ddx; mapX += stepX; } else { hd = sdy; sdy += ddy; mapY += stepY; }
+          if (sdx < sdy) { hd = sdx; sdx += ddx; mapX += stepX; side = 0; } else { hd = sdy; sdy += ddy; mapY += stepY; side = 1; }
           const tEnter = hd / hl;
           if (tEnter > t) break;
           if (mapX < 0 || mapY < 0 || mapX >= map.w || mapY >= map.h) break;
           const i = mapY * map.w + mapX;
           const tile = map.grid[i];
           if (!tile || tile === 4) continue;
+          const tExit = Math.min(sdx, sdy) / hl;
+          const pr = this.props && this.props[i];
+          if (pr && tile !== 1) {
+            const th = this._hitProp(pr, o, d, tEnter, Math.min(tExit, t));
+            if (th >= 0 && th < t) { t = th; this._rayTile = tile; this._rayProp = pr.t; break; }
+            continue;
+          }
           const top = H ? (H[i] || 1.2) : 1.2;
           const zIn = o[2] + d[2] * tEnter;
-          const tExit = Math.min(sdx, sdy) / hl;
           const zOut = o[2] + d[2] * tExit;
           if (Math.min(zIn, zOut) < top) {
             // 入った面で当たる（上から入る場合は天面）
-            if (zIn < top) { t = Math.min(t, tEnter); }
-            else t = Math.min(t, (top - o[2]) / d[2]);
+            this._rayTile = tile; this._rayProp = null;
+            if (zIn < top) {
+              if (tEnter < t) { t = tEnter; N[0] = side === 0 ? -stepX : 0; N[1] = side === 1 ? -stepY : 0; N[2] = 0; }
+            } else {
+              const tt = (top - o[2]) / d[2];
+              if (tt < t) { t = tt; N[0] = 0; N[1] = 0; N[2] = 1; }
+            }
             break;
           }
           void enter;
         }
       }
       return t;
+    },
+
+    /**
+     * セルの中の小物（幹・岩・木箱）と光線の交差。見た目の形に近い単純形状で取る。
+     * @returns {number} 当たった距離（外れたら -1）。法線は this._rayN に入れる
+     */
+    _hitProp(pr, o, d, t0, t1) {
+      const N = this._rayN;
+      if (pr.t === 'cyl') {
+        const ox = o[0] - pr.cx, oy = o[1] - pr.cy;
+        const a = d[0] * d[0] + d[1] * d[1];
+        if (a < 1e-9) return -1;
+        const b = ox * d[0] + oy * d[1], c = ox * ox + oy * oy - pr.r * pr.r;
+        const disc = b * b - a * c;
+        if (disc < 0) return -1;
+        const sq = Math.sqrt(disc);
+        const tin = (-b - sq) / a, tout = (-b + sq) / a;
+        if (tout < t0 || tin > t1) return -1;
+        const zi = o[2] + d[2] * Math.max(tin, t0);
+        if (tin >= t0 && zi < pr.h && zi >= 0) {
+          const hx = ox + d[0] * tin, hy = oy + d[1] * tin, l = Math.hypot(hx, hy) || 1;
+          N[0] = hx / l; N[1] = hy / l; N[2] = 0;
+          return tin;
+        }
+        // 上から天面に入る
+        if (d[2] < 0) {
+          const tt = (pr.h - o[2]) / d[2];
+          if (tt >= Math.max(tin, t0) && tt <= Math.min(tout, t1)) { N[0] = 0; N[1] = 0; N[2] = 1; return tt; }
+        }
+        return -1;
+      }
+      // 箱（下段 + 上段）
+      let best = -1;
+      const slab = (hx, hy, z0, z1) => {
+        let tmin = t0, tmax = t1, ax = -1;
+        const lo = [pr.cx - hx, pr.cy - hy, z0], hi = [pr.cx + hx, pr.cy + hy, z1];
+        for (let k = 0; k < 3; k++) {
+          if (Math.abs(d[k]) < 1e-9) { if (o[k] < lo[k] || o[k] > hi[k]) return; continue; }
+          let ta = (lo[k] - o[k]) / d[k], tb = (hi[k] - o[k]) / d[k];
+          if (ta > tb) { const q = ta; ta = tb; tb = q; }
+          if (ta > tmin) { tmin = ta; ax = k; }
+          if (tb < tmax) tmax = tb;
+          if (tmin > tmax) return;
+        }
+        if (best < 0 || tmin < best) {
+          best = tmin;
+          N[0] = ax === 0 ? -Math.sign(d[0]) : 0; N[1] = ax === 1 ? -Math.sign(d[1]) : 0; N[2] = ax === 2 ? -Math.sign(d[2]) : 0;
+        }
+      };
+      slab(pr.hx, pr.hy, 0, pr.h);
+      if (pr.h2 > pr.h && pr.hx2 > 0) slab(pr.hx2, pr.hx2, pr.h, pr.h2);
+      return best;
     },
 
     /** 光線とカプセルの交差（最初に触れる距離）。外れたら -1 */
@@ -1374,7 +1467,8 @@
           wx: o[0] + d[0] * best.t, wy: o[1] + d[1] * best.t, wz: o[2] + d[2] * best.t };
       }
       const t = Math.min(tWall, maxR);
-      return { hit: false, wall: tWall < maxR, t, wx: o[0] + d[0] * (t - 0.02), wy: o[1] + d[1] * (t - 0.02), wz: o[2] + d[2] * (t - 0.02) };
+      const n = this._rayN ? this._rayN.slice() : [0, 0, 1];
+      return { hit: false, wall: tWall < maxR, t, n, tile: this._rayTile, prop: this._rayProp, wx: o[0] + d[0] * (t - 0.02), wy: o[1] + d[1] * (t - 0.02), wz: o[2] + d[2] * (t - 0.02) };
     },
 
     /**
