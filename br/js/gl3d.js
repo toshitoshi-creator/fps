@@ -16,7 +16,21 @@
   const EYE_K = 1.6;            // ゲーム側の目の高さ → 描画上の目の高さ
   const PITCH_K = 1.5;          // ゲーム側のピッチ → 実際の見上げ角(rad)
 
-  const SUN = (() => { const v = [0.52, 0.34, 0.62]; const l = Math.hypot(v[0], v[1], v[2]); return [v[0] / l, v[1] / l, v[2] / l]; })();
+  const norm3 = v => { const l = Math.hypot(v[0], v[1], v[2]); return [v[0] / l, v[1] / l, v[2] / l]; };
+  const scale3 = (hex, k) => GLC.lin(hex).map(v => v * k);
+  /**
+   * 試合ごとの天候・時間帯。シードで決まる（ロビーは夕方で固定）。
+   * 影の向き・空・霞・光の色がまとめて変わる。
+   */
+  const ENVS = {
+    clear: { name: 'CLEAR', sun: norm3([0.52, 0.34, 0.62]), sunCol: [2.6, 2.35, 2.0], sky: [0.36, 0.48, 0.66], gnd: [0.20, 0.19, 0.14],
+      zenith: scale3('#3f7fc8', 1.5), horizon: scale3('#bcd3e2', 1.45), fog: scale3('#b4c8d6', 1.35), fogK: 1, exposure: 1.0, clouds: 1 },
+    golden: { name: 'GOLDEN HOUR', sun: norm3([0.78, 0.46, 0.26]), sunCol: [2.9, 1.95, 1.15], sky: [0.34, 0.38, 0.50], gnd: [0.22, 0.17, 0.12],
+      zenith: scale3('#4a78b8', 1.3), horizon: scale3('#f0c8a0', 1.35), fog: scale3('#d8b8a0', 1.2), fogK: 1.1, exposure: 1.05, clouds: 1 },
+    overcast: { name: 'OVERCAST', sun: norm3([0.40, 0.30, 0.75]), sunCol: [1.05, 1.05, 1.08], sky: [0.62, 0.66, 0.72], gnd: [0.26, 0.26, 0.24],
+      zenith: scale3('#8a96a4', 1.3), horizon: scale3('#b8bec4', 1.3), fog: scale3('#aab2ba', 1.25), fogK: 1.9, exposure: 1.1, clouds: 0 }
+  };
+  let SUN = ENVS.clear.sun;
 
   const GL3D = {
     ok: false, gl: null, canvas: null,
@@ -186,6 +200,7 @@
       if (this.map === map && this.world) return;
       const gl = this.gl;
       // 作った世界はシードごとに取っておく（ロビーと試合を行き来しても作り直さない）
+      this.setEnv(map);
       const cached = this._worlds[map.seed];
       if (cached && cached.map === map) {
         this._WKEYS.forEach(k => { this[k] = cached[k]; });
@@ -229,6 +244,21 @@
       const keep = { lobby: !!map.lobby };
       this._WKEYS.forEach(k => { keep[k] = this[k]; });
       this._worlds[map.seed] = keep;
+    },
+
+    ENVS,
+    /** 天候・時間帯を決める（ロビーは夕方、試合はシードで 晴れ5 : 夕方3 : 曇り2） */
+    setEnv(map) {
+      let key = 'clear';
+      if (map.lobby) key = 'golden';
+      else {
+        const r = ((map.seed * 2654435761) >>> 0) % 10;
+        key = r < 5 ? 'clear' : (r < 8 ? 'golden' : 'overcast');
+      }
+      if (this.envOverride && ENVS[this.envOverride]) key = this.envOverride;
+      this.env = ENVS[key];
+      this.envKey = key;
+      SUN = this.env.sun;
     },
 
     setQuality(q) {
@@ -348,6 +378,20 @@
       }
       const eye = (p.eyeZ || 0.55) * EYE_K;
       const ads = (br.zoomT || 0) > 0.5;
+      if (!p.alive) {
+        // 倒されたら、自分の体をゆっくり回り込みながら見下ろす
+        const st = this._death || (this._death = { t: 0 });
+        st.t += 1 / 60;
+        const yawD = p.ang + st.t * 0.45, pt = -0.42;
+        let d = 3.4;
+        const dx = Math.cos(yawD) * Math.cos(pt), dy = Math.sin(yawD) * Math.cos(pt);
+        const c = Render.cast(br.map, p.x, p.y, -dx, -dy, d * Math.cos(pt) + 0.3);
+        if (c.hit) d = Math.max(0.6, (c.dist - 0.25) / Math.cos(pt));
+        cam.mode = 'death';
+        this._setCamera([p.x - dx * d, p.y - dy * d, 0.5 - Math.sin(pt) * d], yawD, pt, 1, 0.05, 900);
+        return;
+      }
+      this._death = null;
       if (this.view === 'TPP' && !ads && p.alive) {
         // 肩越しの三人称。壁にめり込まないよう手前へ寄せる
         const rx = -Math.sin(yaw), ry = Math.cos(yaw);
@@ -493,16 +537,18 @@
       const gl = this.gl, u = P.u, cam = this.cam;
       const lin = GLC.lin;
       if (u.u_vp) gl.uniformMatrix4fv(u.u_vp, false, this.vp);
-      if (u.u_sunDir) gl.uniform3fv(u.u_sunDir, SUN);
-      if (u.u_sunCol) gl.uniform3f(u.u_sunCol, 2.6, 2.35, 2.0);
-      if (u.u_skyCol) gl.uniform3f(u.u_skyCol, 0.36, 0.48, 0.66);
-      if (u.u_gndCol) gl.uniform3f(u.u_gndCol, 0.20, 0.19, 0.14);
-      if (u.u_zenith) gl.uniform3fv(u.u_zenith, lin('#3f7fc8').map(v => v * 1.5));
-      if (u.u_horizon) gl.uniform3fv(u.u_horizon, lin('#bcd3e2').map(v => v * 1.45));
-      if (u.u_fogCol) gl.uniform3fv(u.u_fogCol, lin('#b4c8d6').map(v => v * 1.35));
-      if (u.u_fogDen) gl.uniform1f(u.u_fogDen, this._fogDen || 0.0065);
+      const E = this.env || ENVS.clear;
+      void lin;
+      if (u.u_sunDir) gl.uniform3fv(u.u_sunDir, E.sun);
+      if (u.u_sunCol) gl.uniform3fv(u.u_sunCol, E.sunCol);
+      if (u.u_skyCol) gl.uniform3fv(u.u_skyCol, E.sky);
+      if (u.u_gndCol) gl.uniform3fv(u.u_gndCol, E.gnd);
+      if (u.u_zenith) gl.uniform3fv(u.u_zenith, E.zenith);
+      if (u.u_horizon) gl.uniform3fv(u.u_horizon, E.horizon);
+      if (u.u_fogCol) gl.uniform3fv(u.u_fogCol, E.fog);
+      if (u.u_fogDen) gl.uniform1f(u.u_fogDen, (this._fogDen || 0.0065) * E.fogK);
       if (u.u_camPos) gl.uniform3fv(u.u_camPos, cam.pos);
-      if (u.u_exposure) gl.uniform1f(u.u_exposure, 1.0);
+      if (u.u_exposure) gl.uniform1f(u.u_exposure, E.exposure);
       if (u.u_shadowOn) gl.uniform1f(u.u_shadowOn, this._shadowOn ? 1 : 0);
       if (u.u_shadowMat) gl.uniformMatrix4fv(u.u_shadowMat, false, this.shadowVP);
       if (u.u_shadowTexel) gl.uniform1f(u.u_shadowTexel, 1 / this.shadowSize);
@@ -645,7 +691,7 @@
       gl.useProgram(P.p);
       this._uniformsCommon(P);
       gl.uniformMatrix4fv(P.u.u_invVP, false, this.invVP);
-      gl.uniform1f(P.u.u_clouds, Q.clouds ? 1 : 0);
+      gl.uniform1f(P.u.u_clouds, Q.clouds && (this.env || ENVS.clear).clouds ? 1 : 0);
       gl.depthMask(false);
       gl.bindVertexArray(this.skyVAO);
       gl.drawArrays(gl.TRIANGLES, 0, 3);

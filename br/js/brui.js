@@ -519,7 +519,8 @@
       this.el.altNum.textContent = Math.round(p.z);
       if (this.el.altFill) this.el.altFill.style.height = U.clamp(p.z / BRDATA.MATCH.planeAlt, 0, 1) * 100 + '%';
       const inPlane = p.state === 'plane';
-      this.el.dropPhase.textContent = inPlane ? 'TRANSPORT' : (p.chute ? 'PARACHUTE' : 'FREEFALL');
+      const env = g.GL3D && GL3D.active && GL3D.env ? ' · ' + GL3D.env.name : '';
+      this.el.dropPhase.textContent = (inPlane ? 'TRANSPORT' : (p.chute ? 'PARACHUTE' : 'FREEFALL')) + env;
       this.el.dropInfo.textContent = inPlane ? (this.marker ? '目的地の近くで DROP' : 'マップをタップして目的地を決め、DROP')
         : (p.chute ? '左スティックで滑空。着地地点を調整' : '自由落下中 — パラシュートは自動で開きます');
       U.show(this.el.btnDrop, inPlane);

@@ -298,14 +298,16 @@ function section(t) { results.push('\n\x1b[36m▌' + t + '\x1b[0m'); }
     p.x = spot.x; p.y = spot.y; p.ang = spot.ang; p.pitch = -0.03;
     const e = BR.bots[0];
     e.x = spot.tx; e.y = spot.ty; e.state = 'ground'; e.alive = true; e.hp = 100; e.armor = 0; e.helmet = 0; e.stance = 'stand';
-    e.bot.state = 'LOOTING'; e.bot.reactT = 99;
+    e.bot.state = 'LOOTING'; e.bot.reactT = 99; e.moving = false;
+    // 撃っている間に的が歩き去らないよう、AIを一時停止する
+    window.__botUpd = __br.BRBot.update; __br.BRBot.update = () => {};
     const w = __br.giveWeapon('raptor', 0); p.wIdx = 0; w.mag = 30;
     return { hp: e.hp, mag: w.mag };
   });
   await page.dispatchEvent('#btnFire2', 'pointerdown', { pointerId: 70, bubbles: true, cancelable: true });
   await wait(450);
   await page.dispatchEvent('#btnFire2', 'pointerup', { pointerId: 70, bubbles: true, cancelable: true });
-  const fired = await G(() => ({ hp: __br.BR.bots[0].hp, mag: __br.BR.player.weapons[0].mag, tracers: __br.BR.tracers.length }));
+  const fired = await G(() => { __br.BRBot.update = window.__botUpd; return { hp: __br.BR.bots[0].hp, mag: __br.BR.player.weapons[0].mag, tracers: __br.BR.tracers.length }; });
   ok('左手側の射撃ボタンでも撃てる', fired.mag < fire.mag, fire.mag + '→' + fired.mag);
   ok('実際の射撃でも正面の相手に当たる', fired.hp < fire.hp, 'HP ' + fire.hp + '→' + Math.round(fired.hp));
   ok('オーバーレイにダメージ数値が描かれる', await G(() => {

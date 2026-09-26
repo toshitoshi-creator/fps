@@ -19,6 +19,9 @@ canvas#view{position:absolute;inset:0;width:100%;height:100%;display:block;backg
 canvas#gl{position:absolute;inset:0;width:100%;height:100%;display:none;background:#9fb9cb}
 canvas#ovl{position:absolute;inset:0;width:100%;height:100%;display:none;pointer-events:none;z-index:19}
 body.gl3d canvas#gl,body.gl3d canvas#ovl{display:block}
+.lens{position:absolute;inset:0;pointer-events:none;z-index:18;display:none;
+  background:radial-gradient(ellipse at 50% 48%,rgba(0,0,0,0) 58%,rgba(0,0,0,.16) 86%,rgba(0,0,0,.34) 100%)}
+body.gl3d .lens{display:block}
 body.gl3d canvas#view{visibility:hidden}
 .hidden{display:none!important}
 .screen{position:absolute;inset:0}

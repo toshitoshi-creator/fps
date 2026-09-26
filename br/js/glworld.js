@@ -629,7 +629,7 @@
    * @returns {{terrain, water, solid, cutout, tileH}}
    */
   function build(map) {
-    const ground = WorldTex.paintGround(map);
+    const ground = WorldTex.paintGround(map, map.lobby ? 512 : 1024);
     const tileH = new Float32Array(map.w * map.h);
     const solid = new GLC.Builder(LIT), cutout = new GLC.Builder(LIT);
     buildings(map, solid, tileH);

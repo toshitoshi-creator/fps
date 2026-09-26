@@ -51,8 +51,17 @@
     }
     return s / tot;
   }
-  // 非周期ノイズ（地面用）
-  function vn(x, y) { return pn(x, y, 4096); }
+  // 非周期ノイズ（地面用）。剰余を使わない高速版
+  function vn(x, y) {
+    const xi = Math.floor(x), yi = Math.floor(y);
+    let fx = x - xi, fy = y - yi;
+    fx = fx * fx * (3 - 2 * fx); fy = fy * fy * (3 - 2 * fy);
+    const hx0 = Math.imul(xi, 374761393), hx1 = Math.imul(xi + 1, 374761393);
+    const hy0 = Math.imul(yi, 668265263), hy1 = Math.imul(yi + 1, 668265263);
+    const a = PERM[((hx0 ^ hy0) >>> 15) & 65535], b = PERM[((hx1 ^ hy0) >>> 15) & 65535];
+    const c = PERM[((hx0 ^ hy1) >>> 15) & 65535], d = PERM[((hx1 ^ hy1) >>> 15) & 65535];
+    return a + (b - a) * fx + (c - a) * fy + (a - b - c + d) * fx * fy;
+  }
   function vfbm(x, y, oct) {
     let s = 0, amp = 0.5, tot = 0, f = 1;
     for (let i = 0; i < (oct || 4); i++) { s += vn(x * f + i * 17.3, y * f - i * 9.1) * amp; tot += amp; amp *= 0.5; f *= 2.03; }
@@ -482,8 +491,8 @@
     return st;
   }
 
-  function paintGround(map) {
-    const P = GROUND.px, org = GROUND.origin, size = GROUND.size, spp = size / P;
+  function paintGround(map, pxSize) {
+    const P = pxSize || GROUND.px, org = GROUND.origin, size = GROUND.size, spp = size / P;
     const wd = waterDistance(map), ld = landDistance(map);
     const c = document.createElement('canvas');
     c.width = c.height = P;
@@ -493,50 +502,82 @@
     const G1 = hex('#5d7a3a'), G2 = hex('#7f8f45'), G3 = hex('#4b6a33'), DRY = hex('#a39a5c');
     const SAND = hex('#cdbb8c'), WET = hex('#9e8f68'), SEABED = hex('#6f7a5c'), DEEP = hex('#3a4a44');
     const DIRT = hex('#86704f'), ROCKY = hex('#8a8676');
-    // ランドマークの影響（森は濃く、岩稜は石まじり、集落の周りは乾いた草）
+    // 低い周波数の色（草の3色・乾いた草・土・ランドマーク・水深）は 1/4 解像度で求めて補間し、
+    // 細かい粒（n2, n3）だけを全画素で足す。端末でも試合開始の待ちが短くなるように。
     const lms = map.landmarks;
-    for (let py = 0; py < P; py++) {
-      const wy = org + (py + 0.5) * spp;
-      for (let px = 0; px < P; px++) {
-        const wx = org + (px + 0.5) * spp;
-        const i = (py * P + px) * 4;
+    const LR = P >> 2, lsp = size / LR;
+    const base = new Float32Array(LR * LR * 3), fF = new Float32Array(LR * LR), mF = new Float32Array(LR * LR), wD = new Float32Array(LR * LR);
+    for (let ly = 0; ly < LR; ly++) {
+      const wy = org + (ly + 0.5) * lsp;
+      for (let lx = 0; lx < LR; lx++) {
+        const wx = org + (lx + 0.5) * lsp;
+        const j = ly * LR + lx;
         const wdist = sampleField(wd, map, wx, wy, 0);
+        wD[j] = wdist;
         let r, gg, b;
         if (wdist < 0.5) {
-          // 水中（浅い所は砂、深い所は暗く）
           const depth = sampleField(ld, map, wx, wy, 20);
           const k = sstep(0, 4, depth);
           r = mix(SAND[0] * 0.85, DEEP[0], k); gg = mix(SAND[1] * 0.85, DEEP[1], k); b = mix(SAND[2] * 0.85, DEEP[2], k);
-          const n = vfbm(wx * 0.6, wy * 0.6, 3);
-          r *= 0.85 + n * 0.3; gg *= 0.85 + n * 0.3; b *= 0.85 + n * 0.3;
         } else {
-          const n1 = vfbm(wx * 0.09, wy * 0.09, 4), n2 = vfbm(wx * 0.5 + 40, wy * 0.5, 3), n3 = vfbm(wx * 2.2, wy * 2.2, 2);
-          // 草の基本色（3色＋乾いた草）
+          const n1 = vfbm(wx * 0.09, wy * 0.09, 4);
           const t1 = sstep(0.35, 0.65, n1);
           r = mix(G3[0], G1[0], t1); gg = mix(G3[1], G1[1], t1); b = mix(G3[2], G1[2], t1);
-          const t2 = sstep(0.55, 0.75, n2);
-          r = mix(r, G2[0], t2 * 0.6); gg = mix(gg, G2[1], t2 * 0.6); b = mix(b, G2[2], t2 * 0.6);
           const dry = sstep(0.62, 0.8, vfbm(wx * 0.05 + 11, wy * 0.05, 3));
           r = mix(r, DRY[0], dry * 0.55); gg = mix(gg, DRY[1], dry * 0.55); b = mix(b, DRY[2], dry * 0.55);
-          // 土のむら
           const dirt = sstep(0.68, 0.82, vfbm(wx * 0.18 + 5, wy * 0.18 - 3, 4));
           r = mix(r, DIRT[0], dirt * 0.7); gg = mix(gg, DIRT[1], dirt * 0.7); b = mix(b, DIRT[2], dirt * 0.7);
-          // ランドマーク別
           for (let k = 0; k < lms.length; k++) {
             const l = lms[k];
             const dd = Math.hypot(wx - l.x, wy - l.y) / (l.r * 1.25);
             if (dd > 1) continue;
             const f = sstep(1, 0.5, dd);
-            if (l.key === 'forest') { r = mix(r, r * 0.72, f); gg = mix(gg, gg * 0.8, f); b = mix(b, b * 0.7, f); const nd = sstep(0.5, 0.7, n2) * f; r = mix(r, 92, nd * 0.5); gg = mix(gg, 70, nd * 0.5); b = mix(b, 44, nd * 0.5); }
-            else if (l.key === 'mountain') { const rk = f * (0.45 + n2 * 0.5); r = mix(r, ROCKY[0], rk); gg = mix(gg, ROCKY[1], rk); b = mix(b, ROCKY[2], rk); }
+            if (l.key === 'forest') { r = mix(r, r * 0.72, f); gg = mix(gg, gg * 0.8, f); b = mix(b, b * 0.7, f); fF[j] = Math.max(fF[j], f); }
+            else if (l.key === 'mountain') mF[j] = Math.max(mF[j], f);
             else if (l.key === 'military' || l.key === 'industrial' || l.key === 'harbor') { const rk = f * 0.55; r = mix(r, 128, rk); gg = mix(gg, 118, rk); b = mix(b, 96, rk); }
             else if (l.key === 'city') { const rk = f * 0.35; r = mix(r, DIRT[0], rk); gg = mix(gg, DIRT[1], rk); b = mix(b, DIRT[2], rk); }
           }
-          // 砂浜
-          const beach = sstep(2.6, 0.6, wdist) * (0.75 + n3 * 0.25);
-          const wet = sstep(1.1, 0.5, wdist);
-          r = mix(r, SAND[0], beach); gg = mix(gg, SAND[1], beach); b = mix(b, SAND[2], beach);
-          r = mix(r, WET[0], wet); gg = mix(gg, WET[1], wet); b = mix(b, WET[2], wet);
+        }
+        base[j * 3] = r; base[j * 3 + 1] = gg; base[j * 3 + 2] = b;
+      }
+    }
+    // 全画素の補間表（4倍ちょうどなので、x/y ごとに1度だけ作る）
+    const X0 = new Int32Array(P), X1 = new Int32Array(P), TX = new Float32Array(P);
+    for (let q = 0; q < P; q++) {
+      const f = (q + 0.5) / 4 - 0.5;
+      const a = Math.max(0, Math.min(LR - 1, Math.floor(f)));
+      X0[q] = a; X1[q] = Math.min(LR - 1, a + 1); TX[q] = Math.max(0, Math.min(1, f - a));
+    }
+    for (let py = 0; py < P; py++) {
+      const wy = org + (py + 0.5) * spp;
+      const y0 = X0[py] * LR, y1 = X1[py] * LR, ty = TX[py];
+      for (let px = 0; px < P; px++) {
+        const wx = org + (px + 0.5) * spp;
+        const i = (py * P + px) * 4;
+        const x0 = X0[px], x1 = X1[px], tx = TX[px];
+        const j00 = y0 + x0, j01 = y0 + x1, j10 = y1 + x0, j11 = y1 + x1;
+        const w00 = (1 - tx) * (1 - ty), w01 = tx * (1 - ty), w10 = (1 - tx) * ty, w11 = tx * ty;
+        let r = base[j00 * 3] * w00 + base[j01 * 3] * w01 + base[j10 * 3] * w10 + base[j11 * 3] * w11;
+        let gg = base[j00 * 3 + 1] * w00 + base[j01 * 3 + 1] * w01 + base[j10 * 3 + 1] * w10 + base[j11 * 3 + 1] * w11;
+        let b = base[j00 * 3 + 2] * w00 + base[j01 * 3 + 2] * w01 + base[j10 * 3 + 2] * w10 + base[j11 * 3 + 2] * w11;
+        const wdist = wD[j00] * w00 + wD[j01] * w01 + wD[j10] * w10 + wD[j11] * w11;
+        if (wdist < 0.5) {
+          const n = vn(wx * 0.6, wy * 0.6) * 0.65 + vn(wx * 1.3 + 7, wy * 1.3) * 0.35;
+          r *= 0.85 + n * 0.3; gg *= 0.85 + n * 0.3; b *= 0.85 + n * 0.3;
+        } else {
+          const n2 = vn(wx * 0.5 + 40, wy * 0.5) * 0.66 + vn(wx * 1.02 + 57, wy * 1.02) * 0.34, n3 = vn(wx * 2.2, wy * 2.2);
+          const t2 = sstep(0.55, 0.75, n2) * 0.6;
+          r = mix(r, G2[0], t2); gg = mix(gg, G2[1], t2); b = mix(b, G2[2], t2);
+          const ff = fF[j00] * w00 + fF[j01] * w01 + fF[j10] * w10 + fF[j11] * w11;
+          if (ff > 0) { const nd = sstep(0.5, 0.7, n2) * ff * 0.5; r = mix(r, 92, nd); gg = mix(gg, 70, nd); b = mix(b, 44, nd); }
+          const mf = mF[j00] * w00 + mF[j01] * w01 + mF[j10] * w10 + mF[j11] * w11;
+          if (mf > 0) { const rk = mf * (0.45 + n2 * 0.5); r = mix(r, ROCKY[0], rk); gg = mix(gg, ROCKY[1], rk); b = mix(b, ROCKY[2], rk); }
+          if (wdist < 2.6) {
+            const beach = sstep(2.6, 0.6, wdist) * (0.75 + n3 * 0.25);
+            const wet = sstep(1.1, 0.5, wdist);
+            r = mix(r, SAND[0], beach); gg = mix(gg, SAND[1], beach); b = mix(b, SAND[2], beach);
+            r = mix(r, WET[0], wet); gg = mix(gg, WET[1], wet); b = mix(b, WET[2], wet);
+          }
           const k2 = 0.88 + n3 * 0.24;
           r *= k2; gg *= k2; b *= k2;
         }
@@ -668,7 +709,8 @@
     const s = px / map.w;
     // 地表（GL と同じ絵）を、マップ範囲だけ切り出して貼る
     const G = GROUND;
-    const src = (0 - G.origin) / G.size * G.px, len = map.w / G.size * G.px;
+    const GP = ground.canvas.width;
+    const src = (0 - G.origin) / G.size * GP, len = map.w / G.size * GP;
     x.drawImage(ground.canvas, src, src, len, len, 0, 0, px, px);
     // 水面の色を乗せる
     const id = x.getImageData(0, 0, px, px), d = id.data;

@@ -14,7 +14,7 @@
   };
 
   let last = 0, frames = 0, fpsT = 0, fps = 60, portrait = false;
-  let hintStep = 0, autoRunT = 0;
+  let hintStep = 0, autoRunT = 0, buildPending = 0;
   const adsElOff = () => { const e = U.$id('btnAds'); if (e) e.classList.remove('toggled'); };
 
   function checkOrientation() {
@@ -53,6 +53,11 @@
     Snd.resume();
     BR.newMatch({ bots: BRSave.data.settings.bots });
     Render.setStage(THEME);
+    if (GL3D.active) {
+      // 島の3Dを組み立てる間（端末で0.5〜1秒）は読み込み表示を出して、止まって見えないようにする
+      U.show(U.$id('loading'), true);
+      buildPending = 2;
+    }
     BRUI.marker = null;
     BRUI.show('dropScreen');
     Input.setEnabled(true);
@@ -312,7 +317,7 @@
       BRUI.tutorial('右上のマップをタップして目的地を決め、DROP で降下');
     } else if (hintStep === 1 && p.state === 'drop') {
       hintStep = 2; BRUI.tutorial('左スティックで滑空方向を調整 / 右側をスワイプで見回す');
-    } else if (hintStep === 2 && p.state === 'ground') {
+    } else if (hintStep >= 1 && hintStep <= 2 && p.state === 'ground') {
       hintStep = 3; BRUI.tutorial('足元のアイテムは右の一覧をタップで拾える');
       setTimeout(() => { if (hintStep === 3) BRUI.tutorial(null); }, 7000);
     }
@@ -328,6 +333,11 @@
     frames++; fpsT += dt;
     if (fpsT >= 0.5) { fps = frames / fpsT; frames = 0; fpsT = 0; if (GL3D.active) GL3D.autoTune(fps); else Render.autoTune(fps); }
 
+    if (buildPending > 0) {
+      // 読み込み表示を1フレーム描かせてから、島を組み立てる
+      if (--buildPending === 0) { GL3D.setMap(BR.map); last = 0; U.show(U.$id('loading'), false); }
+      return;
+    }
     const playing = ['PLANE', 'DROP', 'EARLY_GAME', 'MID_GAME', 'LATE_GAME', 'FINAL_ZONE'].indexOf(BR.state) >= 0;
     if (playing && BRUI.cur !== 'bagScreen' && BRUI.cur !== 'mapScreen') {
       Input.pollKeys();
